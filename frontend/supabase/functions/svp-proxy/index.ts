@@ -173,15 +173,10 @@ async function reconcileFinalizedReservationRefunds(
 
     // Check if refund-eligible (finalized status OR has cancellation timestamp)
     const eligible = isRefundEligibleReservation(status, cancellationTimestamp);
-    // Also check for reservations with NO status (might be failed/missing upstream)
-    const noStatus = !status || status === "unknown" || status === "";
-    if (!eligible && !noStatus) continue;
-
-    // Skip if status is still active/pending (not yet finalized)
-    if (!eligible && noStatus) {
-      // For no-status reservations, check if they have a cancellation timestamp
-      if (!cancellationTimestamp) continue;
-    }
+    // Only auto-refund if status is explicitly refundable (cancelled/expired/failed).
+    // Never refund on stale cancellation timestamps alone — the reservation may be active.
+    const statusExplicitlyRefundable = /cancel|expired|no[_\s-]?show|absent|void|fail|declin|reject|error|closed/i.test(status);
+    if (!statusExplicitlyRefundable) continue;
 
     const debitTx = (walletRows || []).find((tx: any) =>
       tx.direction === "debit" &&
@@ -1637,8 +1632,11 @@ Deno.serve(async (req) => {
             const cancellationTimestamp = data?.cancelled_at || data?.canceled_at || data?.cancellation_date;
             const isFinalized = isRefundEligibleReservation(reservationStatus, cancellationTimestamp);
 
-            // Auto-refund if booking succeeded but reservation is already finalized
-            if (isFinalized && reservationId && walletTransaction) {
+            // Auto-refund ONLY if status is explicitly refundable (cancelled/expired/failed).
+            // Never auto-refund on a successful booking just because a stale cancellation
+            // timestamp exists — the booking succeeded, so keep the charge.
+            const statusExplicitlyRefundable = /cancel|expired|no[_\s-]?show|absent|void|fail|declin|reject|error|closed/i.test(reservationStatus);
+            if (statusExplicitlyRefundable && isFinalized && reservationId && walletTransaction) {
               try {
                 const refundResult = await accessContext.supabase.rpc("wallet_refund_booking", {
                   p_account_id: accessContext.account.id,
