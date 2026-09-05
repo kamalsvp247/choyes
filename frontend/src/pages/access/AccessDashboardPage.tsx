@@ -342,6 +342,42 @@ export default function AccessDashboardPage() {
                 {!adminDashboard.recentPayments.length && <p className="ap-muted">No payment activity available.</p>}
               </div>
             </section>
+
+            <section className="ap-panel ap-payment-activity">
+              <header>
+                <div><small>BOOKING HISTORY</small><h2>All reservations by SVP login</h2></div>
+              </header>
+              <div className="ap-payment-table">
+                <div className="ap-payment-row ap-payment-row--head">
+                  <span>SVP Login</span><span>Reservation ID</span><span>Status</span><span>Completed</span><span>Date</span>
+                </div>
+                {adminDashboard.agencies.flatMap((agency) =>
+                  agency.users.flatMap((user) =>
+                    (user.recentReservations || []).map((r) => ({
+                      ...r,
+                      svpLogin: user.svpLogins?.[0]?.login || user.email,
+                      userName: user.name,
+                      agencyName: agency.name,
+                    }))
+                  )
+                ).sort((a, b) => {
+                  const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                  const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                  return dateB - dateA;
+                }).slice(0, 20).map((r) => (
+                  <div className="ap-payment-row" key={`${r.svpLogin}:${r.id}`}>
+                    <span><strong>{r.userName}</strong><small>{r.svpLogin}</small></span>
+                    <span>#{r.id}</span>
+                    <span className={`ap-status ap-status--${r.completed ? "active" : r.status.toLowerCase().includes("fail") || r.status.toLowerCase().includes("cancel") ? "inactive" : ""}`}>{r.status}</span>
+                    <span>{r.completed ? "Yes" : "No"}</span>
+                    <time>{formatDate(r.createdAt || undefined)}</time>
+                  </div>
+                ))}
+                {!adminDashboard.agencies.some((a) => a.users.some((u) => u.recentReservations?.length)) && (
+                  <p className="ap-muted">No reservation activity available.</p>
+                )}
+              </div>
+            </section>
           </>
         )}
 
