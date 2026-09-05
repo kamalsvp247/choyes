@@ -39,6 +39,7 @@ interface AdminDashboardData {
     }>;
   }>;
   recentPayments: Array<{ id: string; reservationId?: string | null; accountName: string; agencyName?: string | null; svpLogin: string; status: string; paid: boolean; amount?: number | null; currency?: string | null; createdAt?: string | null }>;
+  bookingHistory: Array<{ id: string; accountName: string; svpLogin: string; amount: number; direction: string; description: string; status: string; createdAt: string | null }>;
   recentAccounts: Account[];
   live: { sessionAccounts: number; syncedAccounts: number; syncFailures: number; truncated: boolean; refreshedAt: string };
   bookingCreditCost: number;
@@ -349,32 +350,19 @@ export default function AccessDashboardPage() {
               </header>
               <div className="ap-payment-table">
                 <div className="ap-payment-row ap-payment-row--head">
-                  <span>SVP Login</span><span>Reservation ID</span><span>Status</span><span>Completed</span><span>Date</span>
+                  <span>SVP Login</span><span>Reservation ID</span><span>Status</span><span>Amount</span><span>Date</span>
                 </div>
-                {adminDashboard.agencies.flatMap((agency) =>
-                  agency.users.flatMap((user) =>
-                    (user.recentReservations || []).map((r) => ({
-                      ...r,
-                      svpLogin: user.svpLogins?.[0]?.login || user.email,
-                      userName: user.name,
-                      agencyName: agency.name,
-                    }))
-                  )
-                ).sort((a, b) => {
-                  const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                  const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                  return dateB - dateA;
-                }).slice(0, 20).map((r) => (
-                  <div className="ap-payment-row" key={`${r.svpLogin}:${r.id}`}>
-                    <span><strong>{r.userName}</strong><small>{r.svpLogin}</small></span>
+                {(adminDashboard.bookingHistory || []).map((r) => (
+                  <div className="ap-payment-row" key={`${r.svpLogin}:${r.id}:${r.createdAt}`}>
+                    <span><strong>{r.accountName}</strong><small>{r.svpLogin}</small></span>
                     <span>#{r.id}</span>
-                    <span className={`ap-status ap-status--${r.completed ? "active" : r.status.toLowerCase().includes("fail") || r.status.toLowerCase().includes("cancel") ? "inactive" : ""}`}>{r.status}</span>
-                    <span>{r.completed ? "Yes" : "No"}</span>
+                    <span className={`ap-status ap-status--${r.status === "completed" ? "active" : r.status === "refunded" ? "" : "inactive"}`}>{r.status}</span>
+                    <b>{r.amount ? `${Math.abs(r.amount).toFixed(2)}` : "-"}</b>
                     <time>{formatDate(r.createdAt || undefined)}</time>
                   </div>
                 ))}
-                {!adminDashboard.agencies.some((a) => a.users.some((u) => u.recentReservations?.length)) && (
-                  <p className="ap-muted">No reservation activity available.</p>
+                {!(adminDashboard.bookingHistory?.length) && (
+                  <p className="ap-muted">No booking activity available.</p>
                 )}
               </div>
             </section>

@@ -263,7 +263,7 @@ serve(async (req) => {
 
     // GET /dashboard — account ownership plus live SVP reservation/payment analytics.
     if (path === "/dashboard" && req.method === "GET") {
-      const [accountsResult, svpUsersResult, sessionsResult, billingResult, walletsResult] = await Promise.all([
+      const [accountsResult, svpUsersResult, sessionsResult, billingResult, walletsResult, walletTxResult] = await Promise.all([
         supabase.from("accounts").select("id,name,email,phone,role,status,agency_id,created_at").order("created_at", { ascending: false }),
         supabase.from("svp_users").select("id,login,email,full_name,created_at").order("created_at", { ascending: false }),
         supabase.from("svp_sessions")
@@ -278,6 +278,11 @@ serve(async (req) => {
         supabase.from("wallets")
           .select("account_id,balance")
           .order("account_id"),
+        supabase.from("wallet_transactions")
+          .select("id,account_id,direction,transaction_type,reference_id,amount,balance_after,description,metadata,created_at")
+          .in("transaction_type", ["booking_debit", "refund"])
+          .order("created_at", { ascending: false })
+          .limit(200),
       ]);
       if (accountsResult.error) throw accountsResult.error;
       if (svpUsersResult.error) throw svpUsersResult.error;
@@ -324,6 +329,34 @@ serve(async (req) => {
       const bookingCreditCost = Number(billingResult.data?.booking_credit_cost) || 0;
       const totalWalletBalance = accounts.reduce((sum, item) => sum + (walletBalances.get(item.id) ?? 0), 0);
 
+      // Build booking history from wallet transactions (always available even if SVP sessions expired)
+      const accountById = new Map(accounts.map((item) => [item.id, item]));
+      const svpUserByEmail = new Map<string, SvpIdentity>();
+      for (const u of svpUsers) {
+        const email = String(u.email || u.login || "").toLowerCase();
+        if (email) svpUserByEmail.set(email, u);
+      }
+      const bookingHistory = (walletTxResult.data || [])
+        .filter((tx) => tx.reference_id && tx.transaction_type === "booking_debit")
+        .map((tx) => {
+          const account = accountById.get(tx.account_id);
+          const accountEmail = String(account?.email || "").toLowerCase();
+          const svpUser = svpUserByEmail.get(accountEmail);
+          const meta = tx.metadata && typeof tx.metadata === "object" ? tx.metadata : {};
+          return {
+            id: tx.reference_id,
+            accountName: account?.name || "Unknown",
+            svpLogin: svpUser?.login || account?.email || "-",
+            amount: Number(tx.amount) || 0,
+            direction: tx.direction,
+            description: tx.description || tx.transaction_type,
+            status: meta.svp_success === true ? "completed" : meta.svp_success === false ? "failed" : tx.direction === "refund" ? "refunded" : "charged",
+            createdAt: tx.created_at,
+          };
+        })
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+        .slice(0, 50);
+
       return new Response(JSON.stringify({
         stats: {
           totalAccounts: accounts.length,
@@ -339,6 +372,7 @@ serve(async (req) => {
         },
         agencies,
         recentPayments,
+        bookingHistory,
         recentAccounts: accounts.slice(0, 12).map(publicAccount),
         live: {
           sessionAccounts: live.sessionAccounts,
