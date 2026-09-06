@@ -1098,6 +1098,21 @@ async function fetchOfficialCenterSessions(
   );
   return extractSessions(payload).filter((session: any) => rawSessionMatchesCenter(session, testCenterId));
 }
+// ── t2hub route alias system ────────────────────────────────────────────────
+// Frontend-facing short names for the /t2hub/* data routes. Every alias maps
+// to its canonical route path, so BOTH the legacy /t2hub/* names and the new
+// short names keep working. To add or rename a route: add/adjust the entry
+// here and update the frontend callers — the handlers below always match the
+// canonical /t2hub/* paths.
+const T2HUB_ROUTE_ALIASES: Record<string, string> = {
+  "/fly-status": "/t2hub/session-status",
+  "/fly-centers": "/t2hub/test-centers",
+  "/fly-occupations": "/t2hub/occupations",
+  "/fly-dates": "/t2hub/exam-available-dates",
+  "/fly-sessions": "/t2hub/exam-sessions-bulk",
+  "/fly-pacc-sessions": "/t2hub/pacc-exam-sessions",
+};
+
 
 // ΓöÇΓöÇ Main handler ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 Deno.serve(async (req) => {
@@ -1106,7 +1121,11 @@ Deno.serve(async (req) => {
   }
 
   const url = new URL(req.url);
-  const path = url.pathname.replace(/^\/svp-proxy/, "");
+  const rawPath = url.pathname.replace(/^\/svp-proxy/, "");
+  // Alias resolution happens before every route check, so an alias request is
+  // handled exactly like its canonical /t2hub/* counterpart (same method
+  // guards, same query params, same t2hub session handling).
+  const path = T2HUB_ROUTE_ALIASES[rawPath] ?? rawPath;
   const query = url.search.replace(/^\?/, "");
 
   try {

@@ -553,7 +553,7 @@ export default function BookingPage() {
     (async () => {
       setLoadingOccupations(true); setError("");
       try {
-        const data = await api(`/t2hub/occupations?per_page=1000&locale=en`);
+        const data = await api(`/fly-occupations?per_page=1000&locale=en`);
         const arr = pickArray(data);
         const seen = new Set<string>();
         const unique = arr.filter((it: any) => {
@@ -615,7 +615,7 @@ export default function BookingPage() {
         const params = new URLSearchParams({
           category_id: String(categoryId),
         });
-        const data = await api(`/t2hub/exam-available-dates?${params.toString()}`);
+        const data = await api(`/fly-dates?${params.toString()}`);
         if (!active) return;
         const rawDates = data?.available_dates || data?.dates || data?.data || (Array.isArray(data) ? data : []);
         const entries = normalizeAvailableDateEntries(rawDates);
@@ -700,7 +700,7 @@ export default function BookingPage() {
       if (!selectedCity) { setCityCenterOptions([]); return; }
       try {
         const params = new URLSearchParams({ city: String(selectedCity) });
-        const data: any = await api(`/t2hub/test-centers?${params.toString()}`);
+        const data: any = await api(`/fly-centers?${params.toString()}`);
         if (!active) return;
         const rawCenters = Array.isArray(data?.sites) ? data.sites : Array.isArray(data?.test_centers) ? data.test_centers : pickArray(data);
         const verifiedCenters = mergeVerifiedCityCenterRoster(rawCenters, selectedCity, "78");
@@ -735,7 +735,7 @@ export default function BookingPage() {
       setSessions([]);
       setError("");
       try {
-        const data: any = await api(`/t2hub/pacc-exam-sessions?${new URLSearchParams({
+        const data: any = await api(`/fly-pacc-sessions?${new URLSearchParams({
           category_id: String(categoryId),
           city: String(selectedCity),
           exam_date: availableDate,
