@@ -4,7 +4,9 @@ import {
   canFinalizeWalletDebit,
   getReservationBillingOperation,
   getReservationRefundIdempotencyKey,
+  isRefundEligibleOrphan,
   isRefundEligibleReservation,
+  isNonRefundableStatus,
 } from "./billing-utils.ts";
 import { filterLiveSessionsForCenter, getSessionCenterId } from "./session-center-utils.ts";
 import {
@@ -171,12 +173,13 @@ async function reconcileFinalizedReservationRefunds(
     ).toLowerCase();
     const cancellationTimestamp = row?.cancelled_at || row?.canceled_at || row?.cancellation_date || row?.cancelledAt;
 
-    // Check if refund-eligible (finalized status OR has cancellation timestamp)
-    const eligible = isRefundEligibleReservation(status, cancellationTimestamp);
     // Only auto-refund if status is explicitly refundable (cancelled/expired/failed).
     // Never refund on stale cancellation timestamps alone — the reservation may be active.
-    const statusExplicitlyRefundable = /cancel|expired|no[_\s-]?show|absent|void|fail|declin|reject|error|closed/i.test(status);
-    if (!statusExplicitlyRefundable) continue;
+    // `isRefundEligibleReservation` is the single source of truth and refuses
+    // to refund any status matching NON_REFUNDABLE_RESERVATION_STATUS_RE
+    // (e.g. "Booking completed", "Payment succeeded").
+    const eligible = isRefundEligibleReservation(status, cancellationTimestamp);
+    if (!eligible) continue;
 
     const debitTx = (walletRows || []).find((tx: any) =>
       tx.direction === "debit" &&
@@ -221,17 +224,45 @@ async function reconcileFinalizedReservationRefunds(
 }
 
 /**
- * Check wallet debits that have no matching reservation and auto-refund.
- * This catches cases where:
- * 1. Booking was created (debit happened)
- * 2. Upstream booking failed
- * 3. Reservation was never returned by SVP (or was deleted)
+ * Reconcile wallet debits whose reservation is no longer in the SVP list.
+ *
+ * History note: an earlier version of this function auto-refunded any debit
+ * older than 1 hour whose reservation id was missing from the SVP response.
+ * That was wrong — SVP drops *completed* reservations from the list once
+ * the exam date passes, so every successful booking eventually looked
+ * "orphaned" and was refunded, producing the duplicate `+100` "Automatic
+ * refund for finalized reservation #XXXX" entries the user kept seeing.
+ *
+ * New policy (turn-by-turn):
+ *   1. The function is **disabled by default**. Set
+ *      `SVP_PROXY_ORPHAN_REFUND_ENABLED=true` to opt in.
+ *   2. Even when enabled, we never refund a successful booking. The debit's
+ *      own metadata (stamped at finalize time) must contain an explicitly
+ *      refundable status (`cancelled` / `expired` / `failed` / etc.) OR an
+ *      explicit cancellation timestamp.
+ *   3. There is no time-based auto-refund. A row older than N hours is NOT,
+ *      by itself, a refund signal — only an explicit cancellation status
+ *      or timestamp is.
+ *
+ * The function therefore returns a `disabled` action when the env flag is
+ * off, and `skip_*` actions for every debit it inspected but refused.
+ * Refunds only fire when the metadata clearly proves the booking failed.
  */
 async function reconcileOrphanedDebits(
   supabase: ReturnType<typeof getSupabase>,
   accountId: string,
   reservationsPayload: any,
 ) {
+  const results: { reservation_id: string; status: string; action: string; amount?: number }[] = [];
+
+  // KILL SWITCH — orphan auto-refunds are off by default. Set the env var
+  // explicitly to enable. This protects users from accidental refunds of
+  // completed bookings even if a future regression reintroduces the bug.
+  const enabled = String(Deno.env.get("SVP_PROXY_ORPHAN_REFUND_ENABLED") || "").toLowerCase() === "true";
+  if (!enabled) {
+    return [{ reservation_id: "*", status: "n/a", action: "disabled" }];
+  }
+
   const rows = extractReservationRows(reservationsPayload);
   const reservationIds = new Set<string>();
   for (const row of rows) {
@@ -248,10 +279,6 @@ async function reconcileOrphanedDebits(
     .order("created_at", { ascending: false })
     .limit(100);
   if (walletError) throw walletError;
-
-  const results: { reservation_id: string; status: string; action: string; amount?: number }[] = [];
-  const now = Date.now();
-  const ONE_HOUR_MS = 60 * 60 * 1000;
 
   // Fetch existing refunds for this account to avoid redundant refund attempts
   const { data: refundRows } = await supabase
@@ -274,29 +301,80 @@ async function reconcileOrphanedDebits(
     if (!reservationId) continue;
 
     // Skip if reservation exists in SVP response
-    if (reservationIds.has(reservationId)) continue;
+    if (reservationIds.has(reservationId)) {
+      results.push({ reservation_id: reservationId, status: "present_in_svp", action: "skip_present" });
+      continue;
+    }
 
     // Skip if already refunded
-    if (refundedReservationIds.has(reservationId)) continue;
+    if (refundedReservationIds.has(reservationId)) {
+      results.push({ reservation_id: reservationId, status: "refunded", action: "already_refunded" });
+      continue;
+    }
 
-    // Only refund debits older than 1 hour (give SVP time to process)
-    const debitAge = now - new Date(debitTx.created_at).getTime();
-    if (debitAge < ONE_HOUR_MS) continue;
+    // SAFETY NET — never refund a successful booking.
+    //
+    // The debit's metadata is the only authoritative signal of what
+    // happened at booking time. If SVP returned an explicit success status
+    // ("Booking completed" / "Payment succeeded" / "Active" / etc.), the
+    // reservation is considered successful and we refuse to refund.
+    const debitMetadata = (debitTx as any)?.metadata && typeof (debitTx as any).metadata === "object"
+      ? (debitTx as any).metadata
+      : {};
+    const statusAtBooking = String(
+      debitMetadata?.reservation_status_at_booking
+        || debitMetadata?.reservation_status
+        || "",
+    ).toLowerCase().trim();
+    const cancellationTimestampAtBooking = String(
+      debitMetadata?.cancellation_timestamp_at_booking
+        || debitMetadata?.cancelled_at
+        || "",
+    ).trim();
+
+    // Hard rule: a non-refundable status always wins, regardless of age.
+    if (statusAtBooking && isNonRefundableStatus(statusAtBooking)) {
+      results.push({ reservation_id: reservationId, status: statusAtBooking, action: "skip_completed_booking" });
+      continue;
+    }
+
+    // No status at all and no cancellation timestamp → no refund signal.
+    // We do NOT age-based-refund anymore — absence from the SVP list is
+    // not, by itself, evidence of failure.
+    if (!statusAtBooking && !cancellationTimestampAtBooking) {
+      results.push({ reservation_id: reservationId, status: "unknown", action: "skip_no_status_signal" });
+      continue;
+    }
+
+    // Use the eligibility helper for the explicit-signal cases so the live
+    // and orphan paths share one definition of "refundable".
+    if (!isRefundEligibleOrphan(statusAtBooking, Boolean(cancellationTimestampAtBooking))) {
+      results.push({ reservation_id: reservationId, status: statusAtBooking || "unknown", action: "skip_not_refundable" });
+      continue;
+    }
 
     const refundAmount = Math.abs(Number(debitTx.amount));
-    if (!Number.isFinite(refundAmount) || refundAmount <= 0) continue;
+    if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+      results.push({ reservation_id: reservationId, status: statusAtBooking, action: "invalid_amount" });
+      continue;
+    }
 
     const { data: refundTx, error: refundError } = await supabase.rpc("wallet_refund_booking", {
       p_account_id: accountId,
       p_reservation_id: reservationId,
-      p_status: "orphaned",
-      p_metadata: { source: "svp-proxy-orphan-cleanup", original_debit_created: debitTx.created_at },
+      p_status: statusAtBooking || "cancelled",
+      p_metadata: {
+        source: "svp-proxy-orphan-cleanup",
+        original_debit_created: debitTx.created_at,
+        reservation_status_at_booking: statusAtBooking,
+        cancellation_timestamp_at_booking: cancellationTimestampAtBooking,
+      },
     });
     if (refundError) {
-      results.push({ reservation_id: reservationId, status: "orphaned", action: "refund_failed", amount: refundAmount });
+      results.push({ reservation_id: reservationId, status: statusAtBooking || "cancelled", action: "refund_failed", amount: refundAmount });
       continue;
     }
-    results.push({ reservation_id: reservationId, status: "orphaned", action: "refunded", amount: Number(refundTx?.amount || refundAmount) });
+    results.push({ reservation_id: reservationId, status: statusAtBooking || "cancelled", action: "refunded", amount: Number(refundTx?.amount || refundAmount) });
   }
   return results;
 }
@@ -1607,6 +1685,21 @@ Deno.serve(async (req) => {
               details: { operation: billingOperation, wallet_hold_id: walletHoldId },
             };
           }
+          // Capture the booking-time status BEFORE finalizing the hold so we
+          // can stamp it on the debit metadata. The orphan-refund sweep relies
+          // on this metadata to distinguish a successful "Booking completed"
+          // booking (which must NEVER be refunded) from a true orphan
+          // (cancelled/expired/failed) where the upstream list no longer
+          // returns the row.
+          let reservationStatus = "";
+          let cancellationTimestamp: string | null = null;
+          if (data && typeof data === "object" && !Array.isArray(data)) {
+            reservationStatus = String(
+              data?.reservation_status || data?.status || data?.state || data?.cbt_exam_status || "",
+            ).toLowerCase();
+            cancellationTimestamp = data?.cancelled_at || data?.canceled_at || data?.cancellation_date || null;
+          }
+
           let walletTransaction: any = null;
           if (walletHoldId) {
             const { data: completedTransaction, error: completeError } = await accessContext.supabase.rpc("wallet_complete_booking_hold", {
@@ -1617,6 +1710,10 @@ Deno.serve(async (req) => {
                 operation: billingOperation,
                 svp_success: true,
                 configured_credit_cost: bookingCreditCost,
+                // Stamped at booking time so the orphan-refund sweep can
+                // recognise a successful booking and refuse to refund it.
+                reservation_status_at_booking: reservationStatus || null,
+                cancellation_timestamp_at_booking: cancellationTimestamp || null,
               },
             });
             if (completeError) {
@@ -1626,17 +1723,13 @@ Deno.serve(async (req) => {
           }
           if (data && typeof data === "object" && !Array.isArray(data)) {
             // Check if the reservation is already in a finalized (refund-eligible) state
-            const reservationStatus = String(
-              data?.reservation_status || data?.status || data?.state || data?.cbt_exam_status || "",
-            ).toLowerCase();
-            const cancellationTimestamp = data?.cancelled_at || data?.canceled_at || data?.cancellation_date;
             const isFinalized = isRefundEligibleReservation(reservationStatus, cancellationTimestamp);
 
             // Auto-refund ONLY if status is explicitly refundable (cancelled/expired/failed).
             // Never auto-refund on a successful booking just because a stale cancellation
             // timestamp exists — the booking succeeded, so keep the charge.
-            const statusExplicitlyRefundable = /cancel|expired|no[_\s-]?show|absent|void|fail|declin|reject|error|closed/i.test(reservationStatus);
-            if (statusExplicitlyRefundable && isFinalized && reservationId && walletTransaction) {
+            // `isRefundEligibleReservation` is the single source of truth here.
+            if (isFinalized && reservationId && walletTransaction) {
               try {
                 const refundResult = await accessContext.supabase.rpc("wallet_refund_booking", {
                   p_account_id: accessContext.account.id,
