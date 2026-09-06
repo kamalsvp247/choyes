@@ -150,11 +150,27 @@ async function getBookingCreditCost(supabase: ReturnType<typeof getSupabase>, ag
   return amount;
 }
 
+// ── MASTER KILL SWITCH — automatic refund system ───────────────────────────
+// Every automatic refund path (finalized-reservation reconciliation, the
+// orphaned-debit sweep, and the post-booking refund) checks this flag and
+// does nothing while it is false. It defaults to OFF: the auto-refund system
+// is fully disabled unless SVP_PROXY_AUTO_REFUND_ENABLED=true is set
+// explicitly in the function's environment. Manual, user-initiated refunds
+// are NOT affected by this switch.
+const AUTO_REFUND_ENABLED =
+  String(Deno.env.get("SVP_PROXY_AUTO_REFUND_ENABLED") || "").toLowerCase() === "true";
+
 async function reconcileFinalizedReservationRefunds(
   supabase: ReturnType<typeof getSupabase>,
   accountId: string,
   reservationsPayload: any,
 ) {
+  // Auto-refund system is totally off (master kill switch). This reconciliation
+  // used to auto-refund reservation debits whose status was explicitly
+  // refundable; now it is a hard no-op unless the master switch is enabled.
+  if (!AUTO_REFUND_ENABLED) {
+    return [];
+  }
   const rows = extractReservationRows(reservationsPayload);
   const results: { reservation_id: string; status: string; action: string; amount?: number }[] = [];
   const { data: walletRows, error: walletError } = await supabase
@@ -258,7 +274,10 @@ async function reconcileOrphanedDebits(
   // KILL SWITCH — orphan auto-refunds are off by default. Set the env var
   // explicitly to enable. This protects users from accidental refunds of
   // completed bookings even if a future regression reintroduces the bug.
-  const enabled = String(Deno.env.get("SVP_PROXY_ORPHAN_REFUND_ENABLED") || "").toLowerCase() === "true";
+  // The master auto-refund kill switch (AUTO_REFUND_ENABLED) must ALSO be
+  // enabled — while the auto-refund system is off, this sweep never runs.
+  const enabled = AUTO_REFUND_ENABLED &&
+    String(Deno.env.get("SVP_PROXY_ORPHAN_REFUND_ENABLED") || "").toLowerCase() === "true";
   if (!enabled) {
     return [{ reservation_id: "*", status: "n/a", action: "disabled" }];
   }
@@ -1536,7 +1555,7 @@ Deno.serve(async (req) => {
         accessCtx.account.id,
         reservationsData,
       );
-      return json({ verified: results.length + orphanResults.length, results: [...results, ...orphanResults], account_id: accessCtx.account.id });
+      return json({ verified: results.length + orphanResults.length, results: [...results, ...orphanResults], account_id: accessCtx.account.id, auto_refund_disabled: !AUTO_REFUND_ENABLED });
     }
 
     // ΓöÇΓöÇ Center-bound temporary seat hold ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -1748,7 +1767,7 @@ Deno.serve(async (req) => {
             // Never auto-refund on a successful booking just because a stale cancellation
             // timestamp exists — the booking succeeded, so keep the charge.
             // `isRefundEligibleReservation` is the single source of truth here.
-            if (isFinalized && reservationId && walletTransaction) {
+            if (AUTO_REFUND_ENABLED && isFinalized && reservationId && walletTransaction) {
               try {
                 const refundResult = await accessContext.supabase.rpc("wallet_refund_booking", {
                   p_account_id: accessContext.account.id,
