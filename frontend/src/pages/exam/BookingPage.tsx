@@ -612,8 +612,11 @@ export default function BookingPage() {
       if (!selectedOccupationId) { setAvailableDateEntries([]); setAvailableDate(""); return; }
       setLoadingDates(true); setError("");
       try {
+        // SVP's available-dates endpoint filters by occupation_id. The
+        // category_id is still used for session and booking routes, but
+        // sending it here returns a misleading empty calendar (HTTP 200).
         const params = new URLSearchParams({
-          category_id: String(categoryId),
+          occupation_id: String(selectedOccupationId),
         });
         const data = await api(`/available-dates?${params.toString()}`);
         if (!active) return;
