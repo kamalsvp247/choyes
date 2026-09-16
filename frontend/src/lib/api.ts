@@ -158,7 +158,7 @@ async function callFunction<T = any>(
   { method = "GET", body, token }: { method?: string; body?: any; token?: string } = {}
 ): Promise<T> {
   const prefix = PROXY_PREFIX(kind);
-  if (!prefix) {
+  if (prefix == null) {
     throw new Error(
       `The "${kind}" API isn't available on the active backend (no Supabase URL configured, ` +
       `and the Railway fallback doesn't implement it yet).`
