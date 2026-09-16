@@ -59,6 +59,13 @@ export const ExamSessionsApi = {
     api(`${BASE}/${id}/cancel`, { method: "POST", body }),
 
   // Reservation lifecycle
+  // Validation inputs stay in the POST body so category_id/condition are not
+  // exposed in the browser URL or browser history.
+  validateReservationAvailability: (data: {
+    category_id: string | number;
+    condition?: string;
+    locale?: string;
+  }) => api("/exam-reservations/validate", { method: "POST", body: data }),
   cancelReservations: (id: string | number, body: { cancellation_reason?: string }) =>
     api(`${RES}/${id}/cancel`, { method: "POST", body }),
   recheduleReservation: (id: string | number, body: any) =>

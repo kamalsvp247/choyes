@@ -1128,6 +1128,28 @@ Deno.serve(async (req) => {
       return json({ ...sessionsData, sessions, exam_sessions: sessions, sites: filteredSites });
     }
 
+    // Keep SVP validation parameters out of the browser URL. The client sends
+    // them as JSON to this proxy; only the server builds the upstream query.
+    if (req.method === "POST" && path === "/exam-reservations/validate") {
+      const { svpToken } = await requireAuth(req);
+      const body = await req.json().catch(() => ({}));
+      const categoryId = String(body?.category_id ?? body?.categoryId ?? "").trim();
+      const condition = String(body?.condition || "booking_availability_condition").trim();
+      const locale = String(body?.locale || "en").trim();
+      if (!categoryId) {
+        throw { statusCode: 400, message: "Missing category_id" };
+      }
+      const upstreamQuery = new URLSearchParams({
+        category_id: categoryId,
+        condition,
+        locale,
+      });
+      return json(await svpFetch(
+        `/api/v1/individual_labor_space/exam_reservations/validate?${upstreamQuery.toString()}`,
+        { method: "GET", token: svpToken },
+      ));
+    }
+
     // Public discovery routes do not require a candidate account. Keep these
     // before requireAuth so the booking page can load its initial catalog.
     if (req.method === "GET" && path === "/occupations") {
