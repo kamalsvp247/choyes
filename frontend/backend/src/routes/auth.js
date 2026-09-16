@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
+import { randomUUID } from 'node:crypto';
 
 import { prisma } from '../lib/prisma.js';
 import { encryptString, randomToken } from '../lib/crypto.js';
@@ -65,6 +66,8 @@ function extractOtpPayload(data) {
 const LoginInputSchema = z.object({
   login: z.string().min(3),
   password: z.string().min(3),
+  requestId: z.string().min(1).optional(),
+  request_id: z.string().min(1).optional(),
   otpMethod: z.enum(['email', 'sms']).optional(),
   recaptchaToken: z.string().min(1).optional(),
   recaptchaResponse: z.string().min(1).optional(),
@@ -76,6 +79,8 @@ const LoginInputSchema = z.object({
 const OtpInputSchema = z.object({
   login: z.string().min(3),
   password: z.string().min(3),
+  requestId: z.string().min(1).optional(),
+  request_id: z.string().min(1).optional(),
   otpAttempt: z.string().min(4).max(10).optional(),
   otp_attempt: z.string().min(4).max(10).optional(),
   otpMethod: z.enum(['email', 'sms']).optional(),
@@ -104,6 +109,7 @@ function normalizeLoginBody(payload) {
   return {
     login: input.login,
     password: input.password,
+    requestId: input.requestId || input.request_id || randomUUID(),
     otpMethod: input.otpMethod || input.otp_method || 'email',
     feApp: input.fe_app || process.env.SVP_FE_APP || 'legislator',
   };
@@ -114,6 +120,7 @@ function normalizeOtpBody(payload) {
   return {
     login: input.login,
     password: input.password,
+    requestId: input.requestId || input.request_id || randomUUID(),
     otpAttempt: input.otpAttempt || input.otp_attempt,
     otpMethod: input.otpMethod || input.otp_method || 'email',
     recaptcha: pickFirst(
@@ -298,10 +305,11 @@ router.post('/token-login', async (req, res, next) => {
 router.post('/login', async (req, res, next) => {
   try {
     const parsed = LoginSchema.parse(req.body);
-    const { login, password, otpMethod, feApp } = normalizeLoginBody(parsed);
+    const { login, password, requestId, otpMethod, feApp } = normalizeLoginBody(parsed);
     const userPayload = {
       login,
       password,
+      request_id: requestId,
       otp_method: otpMethod,
       fe_app: feApp,
     };
@@ -311,9 +319,10 @@ router.post('/login', async (req, res, next) => {
       body: {
         user: userPayload,
       },
+      headers: { 'X-Request-Id': requestId },
     });
 
-    res.json({ status: 'OTP_SENT' });
+    res.json({ status: 'OTP_SENT', login, otpMethod, requestId });
   } catch (e) {
     next(e);
   }
@@ -322,13 +331,14 @@ router.post('/login', async (req, res, next) => {
 router.post('/otp-verify', async (req, res, next) => {
   try {
     const parsed = OtpSchema.parse(req.body);
-    const { login, password, otpAttempt, otpMethod, recaptcha, feApp } = normalizeOtpBody(parsed);
+    const { login, password, requestId, otpAttempt, otpMethod, recaptcha, feApp } = normalizeOtpBody(parsed);
     if (!otpAttempt) {
       return res.status(400).json({ message: 'otpAttempt (or otp_attempt) is required' });
     }
     const userPayload = {
       login,
       password,
+      request_id: requestId,
       otp_attempt: otpAttempt,
       fe_app: feApp,
       otp_method: otpMethod,
@@ -340,6 +350,7 @@ router.post('/otp-verify', async (req, res, next) => {
       body: {
         user: userPayload,
       },
+      headers: { 'X-Request-Id': requestId },
     });
 
     const otpPayload = extractOtpPayload(data);

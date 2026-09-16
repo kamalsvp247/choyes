@@ -143,13 +143,24 @@ export default function LoginPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    openYopmailInbox(login);
     setSubmitting(true);
     setMsg("Sending OTP...");
     setMsgType("info");
     try {
-      await apiAuth("/login", { login, password, otp_method: otpMethod });
-      setPendingAuth({ login, password, otpMethod });
+      const requestId = crypto.randomUUID();
+      const response = await apiAuth<{ requestId?: string }>("/login", {
+        login,
+        password,
+        otp_method: otpMethod,
+        request_id: requestId,
+      });
+      setPendingAuth({
+        login,
+        password,
+        otpMethod,
+        requestId: response?.requestId || requestId,
+      });
+      openYopmailInbox(login);
       setMsg("OTP sent. Check your email or SMS.");
       setMsgType("ok");
       navigate("/auth/otp");

@@ -24,6 +24,7 @@ export default function OtpPage() {
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [otpMethod, setOtpMethod] = useState("email");
+  const [requestId, setRequestId] = useState("");
   const [otpAttempt, setOtpAttempt] = useState("");
   const [msg, setMsg] = useState("");
   const [msgType, setMsgType] = useState<MessageType>("info");
@@ -34,9 +35,11 @@ export default function OtpPage() {
     const pending = getPendingAuth();
     const queryLogin = searchParams.get("login");
     const queryOtpMethod = searchParams.get("otpMethod");
+    const queryRequestId = searchParams.get("requestId");
     setLogin(queryLogin || pending?.login || "");
     setPassword(pending?.password || "");
     setOtpMethod(queryOtpMethod || pending?.otpMethod || "email");
+    setRequestId(queryRequestId || pending?.requestId || "");
     otpInputRef.current?.focus();
   }, [searchParams]);
 
@@ -52,7 +55,7 @@ export default function OtpPage() {
   async function verify(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!login || !password) {
+    if (!login || !password || !requestId) {
       setMsg("Your sign-in session has expired. Return to sign in and request a new code.");
       setMsgType("error");
       return;
@@ -68,6 +71,7 @@ export default function OtpPage() {
         password,
         otp_attempt: otpAttempt,
         otp_method: otpMethod,
+        request_id: requestId,
       });
       authLogin(res.accessToken, res.user || res);
       clearPendingAuth();
@@ -94,8 +98,16 @@ export default function OtpPage() {
     setMsgType("info");
 
     try {
-      await apiAuth("/login", { login, password, otp_method: otpMethod });
-      setPendingAuth({ login, password, otpMethod });
+      const nextRequestId = crypto.randomUUID();
+      const response = await apiAuth<{ requestId?: string }>("/login", {
+        login,
+        password,
+        otp_method: otpMethod,
+        request_id: nextRequestId,
+      });
+      const persistedRequestId = response?.requestId || nextRequestId;
+      setRequestId(persistedRequestId);
+      setPendingAuth({ login, password, otpMethod, requestId: persistedRequestId });
       setOtpAttempt("");
       setMsg(`A new code was sent by ${otpMethod === "sms" ? "SMS" : "email"}. Use the latest code only.`);
       setMsgType("ok");
@@ -111,7 +123,7 @@ export default function OtpPage() {
 
   const DeliveryIcon = otpMethod === "sms" ? Smartphone : Mail;
   const deliveryLabel = otpMethod === "sms" ? "SMS" : "Email";
-  const sessionReady = Boolean(login && password);
+  const sessionReady = Boolean(login && password && requestId);
 
   return (
     <div className="otp-bg">

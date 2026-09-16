@@ -20,7 +20,7 @@ function classifySvpError(statusCode, data) {
   return { statusCode, code: statusCode === 422 ? 'SVP_VALIDATION_ERROR' : 'SVP_UPSTREAM_ERROR', message: data?.message || data?.error || `SVP request failed: ${statusCode}` };
 }
 
-export async function svpRequest(path, { method='GET', token, body } = {}) {
+export async function svpRequest(path, { method='GET', token, body, headers: extraHeaders = {} } = {}) {
   const base = process.env.SVP_BASE_URL;
   const locale = process.env.SVP_LOCALE || 'en';
   const svpOrigin = process.env.SVP_WEB_ORIGIN || 'https://svp-international.pacc.sa';
@@ -43,6 +43,7 @@ export async function svpRequest(path, { method='GET', token, body } = {}) {
     'Referer': svpReferer,
     'User-Agent': svpUserAgent,
     'X-Tenant-Name': 'svp-international',
+    ...extraHeaders,
   };
   if (body) headers['Content-Type'] = 'application/json;charset=UTF-8';
   if (token) headers['Authorization'] = `Bearer ${token}`;

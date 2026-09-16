@@ -30,7 +30,7 @@ const SVP_UA =
 
 async function svpRequest(
   path: string,
-  opts: { method?: string; token?: string; body?: unknown } = {}
+  opts: { method?: string; token?: string; body?: unknown; headers?: Record<string, string> } = {}
 ) {
   const url = `${SVP_BASE}${path}${path.includes("?") ? "&" : "?"}locale=${SVP_LOCALE}`;
   const headers: Record<string, string> = {
@@ -39,6 +39,7 @@ async function svpRequest(
     Referer: `${SVP_ORIGIN}/`,
     "User-Agent": SVP_UA,
     "X-Tenant-Name": "svp-international",
+    ...(opts.headers || {}),
   };
   if (opts.body) headers["Content-Type"] = "application/json;charset=UTF-8";
   if (opts.token) headers["Authorization"] = `Bearer ${opts.token}`;
@@ -254,20 +255,23 @@ Deno.serve(async (req) => {
     // ── LOGIN ─────────────────────────────────────────────────
     if (path === "/login") {
       const input = body.user || body;
+      const requestId = input.request_id || input.requestId || crypto.randomUUID();
       const { login, password, otp_method, fe_app } = input;
       if (!login || !password) return json({ error: "login and password required" }, 400);
 
       await svpRequest("/api/v1/sessions/login", {
         method: "POST",
-        body: { user: { login, password, otp_method: otp_method || "email", fe_app: fe_app || "legislator" } },
+        body: { user: { login, password, request_id: requestId, otp_method: otp_method || "email", fe_app: fe_app || "legislator" } },
+        headers: { "X-Request-Id": requestId },
       });
 
-      return json({ status: "OTP_SENT" });
+      return json({ status: "OTP_SENT", login, otpMethod: otp_method || "email", requestId });
     }
 
     // ── OTP VERIFY ────────────────────────────────────────────
     if (path === "/otp-verify") {
       const input = body.user || body;
+      const requestId = input.request_id || input.requestId || crypto.randomUUID();
       const { login, password, otp_attempt, otpAttempt, otp_method, otpMethod, fe_app,
         recaptcha_response, recaptchaResponse, recaptcha_token, recaptchaToken } = input;
       const otp = otp_attempt || otpAttempt;
@@ -276,6 +280,7 @@ Deno.serve(async (req) => {
       const recaptcha = recaptcha_response || recaptchaResponse || recaptcha_token || recaptchaToken;
       const userPayload: Record<string, unknown> = {
         login, password, otp_attempt: otp,
+        request_id: requestId,
         fe_app: fe_app || "legislator",
         otp_method: otp_method || otpMethod || "email",
       };
@@ -284,6 +289,7 @@ Deno.serve(async (req) => {
       const data = await svpRequest("/api/v1/sessions/otp", {
         method: "POST",
         body: { user: userPayload },
+        headers: { "X-Request-Id": requestId },
       });
 
       const otpPayload = extractOtpPayload(data);
