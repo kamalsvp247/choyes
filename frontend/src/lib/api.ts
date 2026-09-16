@@ -1,6 +1,8 @@
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const SVP_PROXY_URL = import.meta.env.VITE_SVP_PROXY_URL?.replace(/\/$/, "");
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL ||
+  SVP_PROXY_URL?.replace(/\/functions\/v1\/svp-proxy$/, "");
 
 // Two possible backends:
 //  - Supabase edge functions (primary; used whenever VITE_SUPABASE_URL is set)
