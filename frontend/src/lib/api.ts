@@ -1,8 +1,16 @@
 const SUPABASE_PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-const SVP_PROXY_URL = import.meta.env.VITE_SVP_PROXY_URL?.replace(/\/$/, "");
+const CONFIGURED_SVP_PROXY_URL = import.meta.env.VITE_SVP_PROXY_URL?.replace(/\/$/, "");
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL ||
-  SVP_PROXY_URL?.replace(/\/functions\/v1\/svp-proxy$/, "");
+  CONFIGURED_SVP_PROXY_URL?.replace(/\/functions\/v1\/svp-proxy$/, "");
+// Keep the production proxy target explicit so a stale or missing Vercel
+// environment variable cannot silently route requests to the removed Vercel
+// proxy function. The auth pages, including /auth/login, remain on the same
+// Supabase function base.
+const SUPABASE_SVP_PROXY_URL = SUPABASE_URL
+  ? `${SUPABASE_URL}/functions/v1/svp-proxy`
+  : undefined;
+const SVP_PROXY_URL = CONFIGURED_SVP_PROXY_URL || SUPABASE_SVP_PROXY_URL;
 
 // Two possible backends:
 //  - Supabase edge functions (primary; used whenever VITE_SUPABASE_URL is set)
