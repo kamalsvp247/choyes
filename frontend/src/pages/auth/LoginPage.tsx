@@ -39,14 +39,6 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { login: authLogin } = useAuth();
 
-  function openYopmailInbox(email: string) {
-    const normalized = String(email || "").trim().toLowerCase();
-    if (!normalized.endsWith("@yopmail.com")) return;
-    const mailbox = normalized.slice(0, -"@yopmail.com".length);
-    if (!mailbox) return;
-    window.open(`https://yopmail.com/?${encodeURIComponent(mailbox)}`, "_blank", "noopener,noreferrer");
-  }
-
   useEffect(() => {
     const pending = getPendingAuth();
     const portalLogin = sessionStorage.getItem("portal_login") || "";
@@ -160,7 +152,6 @@ export default function LoginPage() {
         otpMethod,
         requestId: response?.requestId || requestId,
       });
-      openYopmailInbox(login);
       setMsg("OTP sent. Check your email or SMS.");
       setMsgType("ok");
       navigate("/auth/otp");
@@ -175,7 +166,6 @@ export default function LoginPage() {
 
   async function submitToken(e: React.FormEvent) {
     e.preventDefault();
-    openYopmailInbox(tokenLogin);
     setTokenSubmitting(true);
     setTokenMsg("Verifying bearer token...");
     setTokenMsgType("info");
