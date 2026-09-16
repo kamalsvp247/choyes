@@ -1,5 +1,6 @@
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+const SVP_PROXY_URL = import.meta.env.VITE_SVP_PROXY_URL?.replace(/\/$/, "");
 
 // Two possible backends:
 //  - Supabase edge functions (primary; used whenever VITE_SUPABASE_URL is set)
@@ -29,6 +30,7 @@ function resolveBackend() {
       authUsesCookies: false,
       authBase: `${SUPABASE_URL}/functions/v1`,
       base: `${SUPABASE_URL}/functions/v1`,
+      proxyBase: SVP_PROXY_URL || `${SUPABASE_URL}/functions/v1`,
       authPrefix: "/svp-auth",
       // Registration is public and does not create a local application
       // session.  When Railway is configured, send its multipart requests
@@ -37,13 +39,15 @@ function resolveBackend() {
       registrationUsesCookies: useRailwayRegistration,
       registrationBase: useRailwayRegistration ? RAILWAY_URL : `${SUPABASE_URL}/functions/v1`,
       registrationPrefix: useRailwayRegistration ? "/api/auth" : "/svp-auth",
-      proxyPrefix: (kind: FunctionKind) => (kind === "proxy" ? "/svp-proxy" : "/test-center-owner"),
+      proxyPrefix: (kind: FunctionKind) =>
+        kind === "proxy" ? (SVP_PROXY_URL ? "" : "/svp-proxy") : "/test-center-owner",
     };
   }
   return {
     authUsesCookies: true,
     authBase: RAILWAY_URL,
     base: RAILWAY_URL,
+    proxyBase: RAILWAY_URL,
     authPrefix: "/api/auth",
     registrationUsesCookies: true,
     registrationBase: RAILWAY_URL,
@@ -58,6 +62,7 @@ const {
   authUsesCookies: AUTH_USES_COOKIES,
   authBase: AUTH_BASE,
   base: BASE,
+  proxyBase: PROXY_BASE,
   authPrefix: AUTH_PREFIX,
   registrationUsesCookies: REGISTRATION_USES_COOKIES,
   registrationBase: REGISTRATION_BASE,
@@ -181,7 +186,8 @@ async function callFunction<T = any>(
     return status === 401 || (status === 500 && message.includes("token expired"));
   };
 
-  let { res, data } = await doFetch(`${BASE}${prefix}${path}`, makeOpts(access));
+  const requestBase = kind === "proxy" ? PROXY_BASE : BASE;
+  let { res, data } = await doFetch(`${requestBase}${prefix}${path}`, makeOpts(access));
 
   const canRefresh = AUTH_USES_COOKIES || Boolean(session.refreshToken && session.sessionId);
   if (shouldRefresh(res.status, data) && canRefresh) {
@@ -196,7 +202,7 @@ async function callFunction<T = any>(
       if (refreshRes.res.ok && refreshRes.data?.accessToken) {
         access = refreshRes.data.accessToken;
         saveSession({ accessToken: access });
-        ({ res, data } = await doFetch(`${BASE}${prefix}${path}`, makeOpts(access)));
+        ({ res, data } = await doFetch(`${requestBase}${prefix}${path}`, makeOpts(access)));
       } else if (refreshRes.res.status === 401) {
         clearSession();
       }
@@ -233,7 +239,7 @@ export async function apiTestCenter<T = any>(
 export { saveSession, clearSession, getSession };
 
 export function getBackendUrl() {
-  return BASE;
+  return PROXY_BASE;
 }
 
 // The correct path prefix to append to getBackendUrl() for direct/raw fetches
