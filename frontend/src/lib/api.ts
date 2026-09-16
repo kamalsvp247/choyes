@@ -182,7 +182,7 @@ async function callFunction<T = any>(
     return {
       method,
       headers: {
-        "Content-Type": "application/json",
+        ...(method !== "GET" ? { "Content-Type": "application/json" } : {}),
         ...(candidateToken ? { Authorization: `Bearer ${candidateToken}` } : {}),
         ...(accessPortalToken ? { "X-Access-Token": accessPortalToken } : {}),
         ...(method !== "GET" ? { "X-Request-Id": requestId } : {}),
