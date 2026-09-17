@@ -124,8 +124,11 @@ export default function BookingPage() {
   );
   const availableDates = useMemo(() => buildDateOptions(availableDateEntries, selectedCity), [availableDateEntries, selectedCity]);
   const cityFilteredSessions = useMemo(
-    () => selectedCity ? sessions.filter((item) => String(getSessionSiteCity(item)).trim().toLowerCase() === String(selectedCity).trim().toLowerCase()) : sessions,
-    [sessions, selectedCity]
+    () => {
+      const source = allDateSessions.length ? allDateSessions : sessions;
+      return selectedCity ? source.filter((item) => String(getSessionSiteCity(item)).trim().toLowerCase() === String(selectedCity).trim().toLowerCase()) : source;
+    },
+    [allDateSessions, sessions, selectedCity]
   );
   const sessionsWithResolvedCenters = useMemo(
     () => cityFilteredSessions.map((item) => resolveSessionCenter(item, testCenterMap, centerNameToSiteId, sessionIdToSiteId, sectionRules)),
