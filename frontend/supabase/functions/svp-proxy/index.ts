@@ -1068,7 +1068,19 @@ Deno.serve(async (req) => {
     }
 
     if (req.method === "GET" && routePath === "/t2hub/occupations") {
-      return json(await t2hubFetch(t2hubQuery("/pacc/occupations", new URLSearchParams(query)), req));
+      // T2Hub's PACC catalogue is capped at 250 rows. Use the public SVP
+      // catalogue first so `/live/occupations` returns every available
+      // occupation; retain T2Hub as a compatibility fallback.
+      try {
+        const params = new URLSearchParams(query);
+        params.set("per_page", params.get("per_page") || "1000");
+        return json(await svpFetch(
+          buildPath("/api/v1/visitor_space/occupations", params.toString()),
+        ));
+      } catch (err: any) {
+        if (err?.statusCode !== 404) throw err;
+        return json(await t2hubFetch(t2hubQuery("/pacc/occupations", new URLSearchParams(query)), req));
+      }
     }
 
     if (req.method === "GET" && routePath === "/t2hub/exam-available-dates") {
