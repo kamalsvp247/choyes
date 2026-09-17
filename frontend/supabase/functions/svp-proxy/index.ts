@@ -1173,7 +1173,19 @@ Deno.serve(async (req) => {
     }
 
     if (req.method === "GET" && path === "/t2hub/occupations") {
-      return json(await t2hubFetch(t2hubQuery("/pacc/occupations", new URLSearchParams(query)), req));
+      // The T2Hub category-only catalogue is capped at 250 rows and omits
+      // valid SVP occupations such as Workshop Worker. Use the public SVP
+      // catalogue first so the live selector exposes the complete list; keep
+      // T2Hub as a fallback if the public SVP endpoint is unavailable.
+      try {
+        const params = new URLSearchParams(query);
+        params.set("per_page", params.get("per_page") || "1000");
+        return json(await svpFetch(
+          buildPath("/api/v1/visitor_space/occupations", params.toString()),
+        ));
+      } catch {
+        return json(await t2hubFetch(t2hubQuery("/pacc/occupations", new URLSearchParams(query)), req));
+      }
     }
 
     if (req.method === "GET" && path === "/t2hub/exam-available-dates") {
