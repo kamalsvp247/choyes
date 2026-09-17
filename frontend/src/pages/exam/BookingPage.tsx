@@ -630,13 +630,15 @@ export default function BookingPage() {
       if (!selectedOccupationId) { setAvailableDateEntries([]); setAvailableDate(""); return; }
       setLoadingDates(true); setError("");
       try {
-        // SVP's available-dates endpoint filters by occupation_id. The
-        // category_id is still used for session and booking routes, but
-        // sending it here returns a misleading empty calendar (HTTP 200).
+        // Use the same public T2Hub calendar route as the live page. The
+        // authenticated SVP available-dates route can return HTTP 200 with an
+        // empty calendar when its session is stale, which leaves all dependent
+        // booking fields blank even though T2Hub has data.
         const params = new URLSearchParams({
           occupation_id: String(selectedOccupationId),
         });
-        const data = await api(`/available-dates?${params.toString()}`);
+        if (categoryId) params.set("category_id", String(categoryId));
+        const data = await api(`/t2hub/exam-available-dates?${params.toString()}`);
         if (!active) return;
         const rawDates = data?.available_dates || data?.dates || data?.data || (Array.isArray(data) ? data : []);
         const entries = normalizeAvailableDateEntries(rawDates).filter((entry) => entry.city);

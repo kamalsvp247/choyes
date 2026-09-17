@@ -133,7 +133,7 @@ function OccupationsFullList({ data }: { data: any }) {
 export default function T2HubLivePage() {
   const [division, setDivision] = useState("Rajshahi");
   const [categoryId, setCategoryId] = useState<number | "">("");
-  const [examDate, setExamDate] = useState("2026-09-12");
+  const [examDate, setExamDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
