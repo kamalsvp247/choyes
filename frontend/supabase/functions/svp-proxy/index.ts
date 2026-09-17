@@ -18,13 +18,12 @@ import {
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-access-token, x-request-id, x-client-info, apikey, content-type, x-t2hub-cookie, x-t2hub-key",
-  "Access-Control-Expose-Headers": "x-t2hub-cookie",
+    "authorization, x-access-token, x-request-id, x-client-info, apikey, content-type, x-client-session, x-client-proof",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
 };
 
 // Code returned in the outer error response when a t2hub-backed route is
-// called without x-t2hub-cookie + x-t2hub-key. The booking page detects
+// called without x-client-session + x-client-proof. The booking page detects
 // this and triggers a one-time t2hub login bridge to capture the
 // caller's own t2hub session material.
 export const T2HUB_SESSION_MISSING_CODE = "T2HUB_SESSION_MISSING";
@@ -350,7 +349,7 @@ let t2hubSession:
 
 // After every t2hub call we stash the most recent cookies here so the
 // response builder can echo them back to the caller in
-// `x-t2hub-cookie`. The caller is responsible for keeping its own copy in
+// `x-client-session`. The caller is responsible for keeping its own copy in
 // sync ΓÇö these cookies rotate on every t2hub response.
 let lastT2HubCookie = "";
 
@@ -363,13 +362,13 @@ let lastT2HubCookie = "";
 //
 // t2hub is a stateful Laravel app ΓÇö a fresh server has no session. Callers
 // MUST pass their logged-in t2hub cookies (and the session key from
-// `window.__sk`) via the `x-t2hub-cookie` and `x-t2hub-key` request headers
+// `window.__sk`) via the `x-client-session` and `x-client-proof` request headers
 // so we can hit the read-only API on their behalf. After each call we return
-// any rotated cookies in the `x-t2hub-cookie` response header so the caller
+// any rotated cookies in the session-refresh response header so the caller
 // can keep its own copy fresh.
-const T2HUB_KEY_HEADER = "x-t2hub-key";
-const T2HUB_COOKIE_HEADER = "x-t2hub-cookie";
-const T2HUB_RESPONSE_COOKIE_HEADER = "x-t2hub-cookie";
+const T2HUB_KEY_HEADER = "x-client-proof";
+const T2HUB_COOKIE_HEADER = "x-client-session";
+const T2HUB_RESPONSE_COOKIE_HEADER = "x-client-session-refresh";
 
 function t2HubHeadersFromRequest(req: Request): { keyRaw: string; cookie: string } | null {
   const keyRaw = req.headers.get(T2HUB_KEY_HEADER)?.trim() || "";
