@@ -636,8 +636,11 @@ export default function BookingPage() {
         // Use the authenticated SVP calendar. Do not fall back to T2Hub here:
         // a discovery-only calendar can contain dates whose sessions are not
         // usable by the official hold/confirm endpoints.
+        // SVP's available-dates endpoint filters by occupation_id. Sending
+        // category_id returns HTTP 200 with an empty calendar, which leaves
+        // the city selector blank even when dates are available.
         const params = new URLSearchParams({
-          category_id: String(selectedOccupation?.categoryId || categoryId || selectedOccupationId),
+          occupation_id: String(selectedOccupationId),
         });
         const data = await api(`/available-dates?${params.toString()}`);
         if (!active) return;
