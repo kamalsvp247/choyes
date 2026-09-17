@@ -1247,7 +1247,7 @@ Deno.serve(async (req) => {
       const params = new URLSearchParams(query);
       params.delete("locale");
       params.set("country_id", params.get("country_id") || SVP_COUNTRY_ID);
-      params.set("per_page", params.get("per_page") || "10000");
+      params.set("per_page", params.get("per_page") || "1000");
       for (let i = 0; i < paths.length; i++) {
         try {
           const data = await svpFetch(buildPath(paths[i], params.toString()), { method: "GET", token: svpToken });
@@ -1291,7 +1291,7 @@ Deno.serve(async (req) => {
       const params = new URLSearchParams(query);
       params.delete("locale");
       params.set("country_id", params.get("country_id") || SVP_COUNTRY_ID);
-      params.set("per_page", params.get("per_page") || "10000");
+      params.set("per_page", params.get("per_page") || "1000");
       const data = await svpFetch(buildPath("/api/v1/individual_labor_space/test_centers/cities", params.toString()), {
         method: "GET",
         token: svpToken,
@@ -1308,7 +1308,7 @@ Deno.serve(async (req) => {
       // forwarding category_id here can incorrectly hide valid centres.
       params.delete("category_id");
       params.set("country_id", params.get("country_id") || SVP_COUNTRY_ID);
-      params.set("per_page", params.get("per_page") || "10000");
+      params.set("per_page", params.get("per_page") || "1000");
       const requestedCity = normalizeCityName(params.get("city"));
       params.delete("city");
       const data = await svpFetch(buildPath("/api/v1/visitor_space/test_centers", params.toString()), {
@@ -1338,7 +1338,7 @@ Deno.serve(async (req) => {
       const centerPayload = await svpFetch(buildPath("/api/v1/visitor_space/test_centers", new URLSearchParams({
         category_id: categoryId,
         country_id: SVP_COUNTRY_ID,
-        per_page: "10000",
+        per_page: "1000",
       }).toString()), { method: "GET", token: svpToken });
       const centers = extractTestCenters(centerPayload)
         .map(normalizeTestCenter)
@@ -1395,7 +1395,7 @@ Deno.serve(async (req) => {
           svpFetch(buildPath("/api/v1/visitor_space/test_centers", new URLSearchParams({
             category_id: categoryId,
             country_id: SVP_COUNTRY_ID,
-            per_page: "10000",
+            per_page: "1000",
           }).toString()), { method: "GET", token: svpToken }),
         ]);
 
