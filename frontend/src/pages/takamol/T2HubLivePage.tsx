@@ -173,14 +173,20 @@ export default function T2HubLivePage() {
 
   const categories = useMemo(() => {
     const map = new Map<number, { id: number; name: string; count: number }>();
-    allOccupations.forEach((o) => {
+    allOccupations.forEach((o: any) => {
       const catId = o.id ?? o.category_id;
-      const catName = o.category_name || `Category ${catId}`;
+      const catName = o.english_name || o.name || o.category_name || `Occupation ${catId}`;
       if (!catId) return;
-      if (map.has(catId)) { map.get(catId)!.count++; } else { map.set(catId, { id: catId, name: catName, count: 1 }); }
+      if (!map.has(catId)) map.set(catId, { id: catId, name: catName, count: 1 });
     });
-    return [...map.values()].sort((a, b) => b.count - a.count);
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [allOccupations]);
+
+  const selectedOccupation = useMemo(
+    () => allOccupations.find((o: any) => String(o.id ?? o.category_id) === String(categoryId)),
+    [allOccupations, categoryId],
+  );
+  const selectedOccupationName = selectedOccupation?.english_name || selectedOccupation?.name || "Selected occupation";
 
   const fetchTestCenters = useCallback(async () => {
     setLoading(true); setError(null); setResult(null); setRawJson(null);
@@ -287,10 +293,10 @@ export default function T2HubLivePage() {
             <div className="tk-field"><label><MapPin size={13} /> Division</label>
               <select value={division} onChange={e => setDivision(e.target.value)}>{DIVISIONS.map(d => <option key={d} value={d}>{d}</option>)}</select>
             </div>
-            <div className="tk-field"><label><Building2 size={13} /> Category</label>
+            <div className="tk-field"><label><Building2 size={13} /> Occupation</label>
               <select value={categoryId} onChange={e => setCategoryId(Number(e.target.value))} disabled={loadingOccupations}>
                 {loadingOccupations ? <option value="">Loading categories...</option> :
-                 categories.map(c => <option key={c.id} value={c.id}>{c.name} ({c.count})</option>)}
+                 categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div className="tk-field"><label><CalendarDays size={13} /> Exam Date</label>
@@ -336,7 +342,7 @@ export default function T2HubLivePage() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--tk-glass-border)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <div style={{ width: 36, height: 36, borderRadius: 8, background: "linear-gradient(135deg, var(--tk-gold), var(--tk-gold-deep))", display: "grid", placeItems: "center", color: "#0b1230", fontWeight: 900, fontSize: 14 }}>{String(centerName).charAt(0)}</div>
-                      <div><p style={{ fontWeight: 700, fontSize: 14 }}>{centerName}</p><p style={{ fontSize: 11, color: "var(--tk-muted)" }}>{centerCity} · {division}</p></div>
+                    <div><p style={{ fontWeight: 700, fontSize: 14 }}>{centerName}</p><p style={{ fontSize: 11, color: "var(--tk-muted)" }}>{selectedOccupationName} · {centerCity} · {division}</p></div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{ background: `${seatColor(centerSeats)}22`, color: seatColor(centerSeats), border: `1px solid ${seatColor(centerSeats)}44`, borderRadius: 20, padding: "4px 14px", fontWeight: 800, fontSize: 14 }}>{centerSeats} seats</div>
@@ -353,7 +359,7 @@ export default function T2HubLivePage() {
                           <div style={{ display: "inline-flex", alignItems: "center", gap: 5, background: `${seatColor(seats)}22`, color: seatColor(seats), border: `1px solid ${seatColor(seats)}44`, borderRadius: 6, padding: "3px 10px", fontWeight: 800, fontSize: 13, width: "fit-content" }}>
                             {seats > 0 ? <CircleCheck size={13} /> : <CircleX size={13} />} {seats} seats
                           </div>
-                          <div><span style={{ color: "var(--tk-muted)" }}>Category:</span> <span style={{ fontSize: 11 }}>{s.category?.english_name || "—"}</span></div>
+                          <div><span style={{ color: "var(--tk-muted)" }}>Occupation:</span> <span style={{ fontSize: 11 }}>{s.category?.english_name || s.occupation_name || selectedOccupationName}</span></div>
                           <div style={{ fontFamily: "monospace", fontSize: 10, color: "var(--tk-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.session_id || s.id}>{String(s.session_id || s.id).substring(0, 30)}...</div>
                         </div>
                       );
@@ -368,7 +374,7 @@ export default function T2HubLivePage() {
         {/* ── Available Dates Calendar ── */}
         {result?.type === "available-dates" && !loading && (
           <section className="tk-card tk-booking-card" style={{ border: "1px solid var(--tk-glass-border)" }}>
-            <div className="tk-step-heading" style={{ marginBottom: 12 }}><span>02</span><div><p className="tk-eyebrow">CALENDAR</p><strong>Available Exam Dates — {division}</strong></div></div>
+            <div className="tk-step-heading" style={{ marginBottom: 12 }}><span>02</span><div><p className="tk-eyebrow">CALENDAR</p><strong>{selectedOccupationName} — Available Exam Dates — {division}</strong></div></div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
               <button className="tk-btn" style={{ padding: "6px 10px" }} onClick={() => { setCalMonth(m => m === 0 ? 11 : m - 1); if (calMonth === 0) setCalYear(y => y - 1); }}><ChevronLeft size={16} /></button>
@@ -404,7 +410,7 @@ export default function T2HubLivePage() {
         {/* ── Test Centers ── */}
         {result?.type === "test-centers" && !loading && result.data?.sites && (
           <section className="tk-card tk-booking-card" style={{ border: "1px solid var(--tk-glass-border)" }}>
-            <div className="tk-step-heading" style={{ marginBottom: 12 }}><span>02</span><div><p className="tk-eyebrow">RESULT</p><strong>{result.data.sites.length} Test Centers in {division}</strong></div></div>
+            <div className="tk-step-heading" style={{ marginBottom: 12 }}><span>02</span><div><p className="tk-eyebrow">RESULT</p><strong>{selectedOccupationName} — {result.data.sites.length} Test Centers in {division}</strong></div></div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 10 }}>
               {result.data.sites.map((s: any) => (
                 <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", border: "1px solid var(--tk-glass-border)", borderRadius: 10, background: "rgba(255,255,255,0.02)" }}>
