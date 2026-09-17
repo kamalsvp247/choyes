@@ -1038,11 +1038,14 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/svp-proxy/, "");
+  // Public alias: keep the upstream/provider name out of client-facing URLs.
+  // Existing /t2hub/* callers remain supported for backward compatibility.
+  const routePath = path.startsWith("/live/") ? `/t2hub/${path.slice("/live/".length)}` : path;
   const query = url.search.replace(/^\?/, "");
 
   try {
     // ═══ t2hub session health check (no auth required) ═══
-    if (req.method === "GET" && path === "/t2hub/session-status") {
+    if (req.method === "GET" && routePath === "/t2hub/session-status") {
       const envKey = Deno.env.get("T2HUB_SESSION_KEY") || "";
       const envCookie = Deno.env.get("T2HUB_SESSION_COOKIE") || "";
       const cached = t2hubSession;
@@ -1054,7 +1057,7 @@ Deno.serve(async (req) => {
     }
 
     // ═══ t2hub data routes (no SVP auth required — uses t2hub session only) ═══
-    if (req.method === "GET" && path === "/t2hub/test-centers") {
+    if (req.method === "GET" && routePath === "/t2hub/test-centers") {
       const params = new URLSearchParams(query);
       params.delete("locale");
       const city = params.get("city") || params.get("division") || "";
@@ -1065,19 +1068,19 @@ Deno.serve(async (req) => {
       return json(data);
     }
 
-    if (req.method === "GET" && path === "/t2hub/occupations") {
+    if (req.method === "GET" && routePath === "/t2hub/occupations") {
       return json(await t2hubFetch(t2hubQuery("/pacc/occupations", new URLSearchParams(query)), req));
     }
 
-    if (req.method === "GET" && path === "/t2hub/exam-available-dates") {
+    if (req.method === "GET" && routePath === "/t2hub/exam-available-dates") {
       return json(await t2hubFetch(t2hubQuery("/exam-available-dates", new URLSearchParams(query)), req));
     }
 
-    if (req.method === "GET" && path === "/t2hub/exam-sessions-bulk") {
+    if (req.method === "GET" && routePath === "/t2hub/exam-sessions-bulk") {
       return json(await t2hubFetch(t2hubQuery("/exam-sessions-bulk", new URLSearchParams(query)), req));
     }
 
-    if (req.method === "POST" && path === "/t2hub/exam-sessions-bulk") {
+    if (req.method === "POST" && routePath === "/t2hub/exam-sessions-bulk") {
       const body = await req.json().catch(() => ({}));
       const requests = body?.requests;
       if (!Array.isArray(requests) || !requests.length) {
@@ -1087,7 +1090,7 @@ Deno.serve(async (req) => {
       return json(data);
     }
 
-    if (req.method === "GET" && path === "/t2hub/pacc-exam-sessions") {
+    if (req.method === "GET" && routePath === "/t2hub/pacc-exam-sessions") {
       const params = new URLSearchParams(query);
       params.delete("locale");
       const city = params.get("city") || "";

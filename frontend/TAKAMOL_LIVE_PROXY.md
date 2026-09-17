@@ -19,12 +19,20 @@ supabase secrets set \
 
 The proxy maps the application routes as follows:
 
+Client-facing live data calls use the neutral `/live/*` aliases below. The
+legacy `/t2hub/*` paths remain accepted by the proxy so older deployments and
+bookmarks continue to work.
+
 | Application route | Live route | Normalized result |
 |---|---|---|
 | `/api/takamol/categories` | `/pacc/occupations?exclude_ignored=1` | `{ categories }` |
 | `/api/takamol/dates` | `/exam-available-dates` | `{ dates, cities, sessions, source }` |
 | `/api/takamol/centers` | `/test-centers` | `{ centers }` |
 | `/api/takamol/sessions` | `/fix-search-mode`, then `/pacc-exam-sessions` | `{ sessions }` |
+
+The public alias routes are `/live/occupations`, `/live/exam-available-dates`,
+`/live/test-centers`, `/live/pacc-exam-sessions`, `/live/exam-sessions-bulk`,
+and `/live/session-status`.
 
 ## Vercel frontend variables
 

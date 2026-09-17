@@ -638,7 +638,7 @@ export default function BookingPage() {
           occupation_id: String(selectedOccupationId),
         });
         if (categoryId) params.set("category_id", String(categoryId));
-        const data = await api(`/t2hub/exam-available-dates?${params.toString()}`);
+        const data = await api(`/live/exam-available-dates?${params.toString()}`);
         if (!active) return;
         const rawDates = data?.available_dates || data?.dates || data?.data || (Array.isArray(data) ? data : []);
         const entries = normalizeAvailableDateEntries(rawDates).filter((entry) => entry.city);
@@ -649,7 +649,7 @@ export default function BookingPage() {
         const liveEntries = (await Promise.all(
           entries.map(async (entry) => {
             try {
-              const sessionData: any = await api(`/t2hub/pacc-exam-sessions?${new URLSearchParams({
+              const sessionData: any = await api(`/live/pacc-exam-sessions?${new URLSearchParams({
                 occupation_id: String(selectedOccupationId),
                 city: entry.city,
                 exam_date: entry.date,
@@ -779,7 +779,7 @@ export default function BookingPage() {
       setSessions([]);
       setError("");
       try {
-        const data: any = await api(`/t2hub/pacc-exam-sessions?${new URLSearchParams({
+        const data: any = await api(`/live/pacc-exam-sessions?${new URLSearchParams({
           occupation_id: String(selectedOccupationId),
           city: String(selectedCity),
           exam_date: availableDate,
