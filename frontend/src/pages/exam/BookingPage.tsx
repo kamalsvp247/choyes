@@ -566,7 +566,11 @@ export default function BookingPage() {
     (async () => {
       setLoadingOccupations(true); setError("");
       try {
-        const data = await api(`/occupations?per_page=1000&locale=en`);
+        // T2Hub is the source of truth for the occupation catalogue used by
+        // the T2Hub date/session flow. Do not use the generic SVP occupations
+        // route here because it can return a different catalogue/identifier
+        // set.
+        const data = await api(`/t2hub/occupations?per_page=1000&locale=en`);
         const arr = pickArray(data);
         const seen = new Set<string>();
         const unique = arr.filter((it: any) => {

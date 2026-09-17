@@ -132,7 +132,12 @@ export function formatLanguageCodeName(code: string): string {
 }
 
 export function normalizeOccupation(item: any): NormalizedOccupation {
-  const id = item?.id || item?.occupation_id || item?.value || "";
+  // T2Hub rows carry both the category id (`id`) and the actual occupation
+  // id (`occupation_id`). The booking/date routes require occupation_id;
+  // retaining category id as the categoryId keeps the two identifiers from
+  // being mixed.
+  const id = item?.occupation_id || item?.id || item?.value || "";
+  const categoryId = item?.category_id || item?.category?.id || (item?.occupation_id ? item?.id : id) || "";
   const langSource = item?.prometric_codes || item?.category?.prometric_codes || [];
   let languageCodes = pickArray(langSource).map((c: any) => ({
     code: c?.code || c?.language_code || "",
@@ -145,7 +150,7 @@ export function normalizeOccupation(item: any): NormalizedOccupation {
     raw: item,
     id: String(id),
     name: item?.name || item?.english_name || item?.occupation_name || item?.title || `Occupation #${id}`,
-    categoryId: String(item?.category_id || item?.category?.id || id || ""),
+    categoryId: String(categoryId),
     methodology: item?.methodology_type || item?.methodology || "in_person",
     languageCodes,
   };
