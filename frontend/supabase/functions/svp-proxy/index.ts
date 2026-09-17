@@ -1109,7 +1109,7 @@ async function fetchOfficialCenterSessions(
     country_id: SVP_COUNTRY_ID,
     available_seats: "greater_than::0",
     status: "scheduled",
-    per_page: "10000",
+    per_page: "1000",
   });
   const payload = await svpFetch(
     buildPath("/api/v1/individual_labor_space/exam_sessions", params.toString()),
