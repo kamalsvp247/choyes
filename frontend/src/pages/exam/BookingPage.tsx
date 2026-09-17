@@ -62,6 +62,7 @@ export default function BookingPage() {
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [sessionReloadKey, setSessionReloadKey] = useState(0);
   const [sessionRetryNotice, setSessionRetryNotice] = useState("");
+  const [officialSessionForBooking, setOfficialSessionForBooking] = useState<any>(null);
   const [creatingHold, setCreatingHold] = useState(false);
   const [booking, setBooking] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
@@ -1135,13 +1136,35 @@ export default function BookingPage() {
     return () => { active = false; };
   }, [sessionId, selectedSession, selectedCenterId]);
 
-  async function verifySelectedSessionCenter(selectedSessionPayloadId: string | number) {
-    // T2Hub is the source of truth for the session selected on this page.
-    // T2Hub session IDs are not always resolvable through SVP's
-    // /exam-session/:id detail route; calling that route here incorrectly
-    // turns a valid T2Hub row into the "SVP no longer has a session" error.
-    // SVP authentication is still required by the hold and reservation APIs.
-    const sessionNode: any = selectedSession;
+  async function loadOfficialSessionForBooking() {
+    if (!selectedCenterId || !selectedCity || !availableDate || !selectedOccupation) {
+      throw new Error("Select an occupation, date, city, and test centre first");
+    }
+    const params = new URLSearchParams({
+      category_id: String(selectedOccupation.categoryId || categoryId || ""),
+      city: String(selectedCity),
+      exam_date: String(availableDate),
+      test_center_id: String(selectedCenterId),
+    });
+    const data: any = await api(`/exam-sessions?${params.toString()}`);
+    const rows = Array.isArray(data?.exam_sessions)
+      ? data.exam_sessions
+      : Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
+    const fresh = rows.find((row: any) => {
+      const site = getSessionSiteId(row);
+      return getSessionId(row) && (!site || String(site) === String(selectedCenterId));
+    });
+    if (!fresh) {
+      throw new Error(`SVP has no fresh session at ${selectedCenterOption?.name || `site ${selectedCenterId}`} for ${availableDate}`);
+    }
+    const freshId = getSessionPayloadId(getSessionId(fresh));
+    if (freshId === null) throw new Error("SVP returned an invalid fresh exam session");
+    setOfficialSessionForBooking(fresh);
+    return { session: fresh, id: freshId };
+  }
+
+  async function verifySelectedSessionCenter(selectedSessionPayloadId: string | number, sessionNode: any = selectedSession) {
+    // T2Hub rows are display-only; hold and reservation use the official SVP row.
     const rowSessionId = getSessionPayloadId(getSessionId(sessionNode) || selectedSessionPayloadId);
     if (rowSessionId == null || String(rowSessionId) !== String(selectedSessionPayloadId)) {
       throw new Error("The selected T2Hub exam session is no longer in the current session list");
@@ -1196,14 +1219,11 @@ export default function BookingPage() {
 
   async function createHold() {
     if (!selectedCenterId || !sessionId) { setError("Select a real test center and exam session first"); return; }
-    const selectedSessionId = getSessionPayloadId(getSessionId(selectedSession) || sessionId);
-    if (selectedSessionId === null) {
-      setError("No valid exam session selected for hold creation");
-      return;
-    }
     setCreatingHold(true); setError(""); setStatus("");
     try {
-      await verifySelectedSessionCenter(selectedSessionId);
+      const fresh = await loadOfficialSessionForBooking();
+      const selectedSessionId = fresh.id;
+      await verifySelectedSessionCenter(selectedSessionId, fresh.session);
       const data: any = await api("/temporary-seats", {
         method: "POST",
         body: {
@@ -1289,14 +1309,21 @@ export default function BookingPage() {
     }
     if (!selectedCenterId || !sessionId) { setError("Select a real test center and exam session first"); return; }
     if (!isRescheduleRequest && !holdId) { setError("Create a live temporary seat hold before confirming the booking"); return; }
-    const selectedSessionPayloadId = getSessionPayloadId(getSessionId(selectedSession) || sessionId);
-    if (selectedSessionPayloadId === null) { setError("No valid exam session selected"); return; }
-    const selectedSessionIdForApi = String(selectedSessionPayloadId);
-    try { await verifySelectedSessionCenter(selectedSessionIdForApi); }
+    let officialSession: any = officialSessionForBooking;
+    let selectedSessionPayloadId = officialSession ? getSessionPayloadId(getSessionId(officialSession)) : null;
+    try {
+      if (selectedSessionPayloadId === null) {
+        const fresh = await loadOfficialSessionForBooking();
+        officialSession = fresh.session;
+        selectedSessionPayloadId = fresh.id;
+      }
+      await verifySelectedSessionCenter(String(selectedSessionPayloadId), officialSession);
+    }
     catch (err: any) {
       if (!recoverFromNoExamSession422(err)) setError(err?.message || "Selected exam session is not bound to the selected test centre");
       return;
     }
+    const selectedSessionIdForApi = String(selectedSessionPayloadId);
     const sessionCodes = getPrometricCodes(selectedSession);
     const effectiveLanguageCode = languageCode || selectedOccupation?.languageCodes?.[0]?.code || sessionCodes?.[0]?.code || sessionCodes?.[0]?.language_code || "";
     if (!effectiveLanguageCode) { setError("language_code is required. Select a language before booking."); return; }
@@ -1495,6 +1522,7 @@ export default function BookingPage() {
   function handleCenterChange(nextCenterId: string) {
     setSelectedCenterId(nextCenterId);
     setSessionId("");
+    setOfficialSessionForBooking(null);
     setSiteId(nextCenterId);
     setSiteCity(selectedCity);
     setHoldId("");
@@ -1541,6 +1569,7 @@ export default function BookingPage() {
 
   function handleSessionChange(nextSessionId: string) {
     setSessionId(nextSessionId);
+    setOfficialSessionForBooking(null);
     setHoldId("");
     setHoldExpiresAt("");
     setReservationId("");
