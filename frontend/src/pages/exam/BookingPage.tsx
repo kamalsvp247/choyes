@@ -103,6 +103,15 @@ export default function BookingPage() {
     });
     return Array.from(map.entries()).map(([code, name]) => ({ code, name }));
   }, [occupations, selectedOccupation]);
+  // T2Hub session rows do not include category.prometric_codes. Its live
+  // booking flow uses LOANN as the default English language code, so expose
+  // the same fallback instead of leaving the required selector empty.
+  const languageOptions = useMemo(
+    () => categoryLanguageCodes.length
+      ? categoryLanguageCodes
+      : [{ code: "LOANN", name: "English (LOANN)" }],
+    [categoryLanguageCodes],
+  );
 
   const cityOptions = useMemo(
     () => liveCityOptions.length ? liveCityOptions : buildCityOptions(availableDateEntries),
@@ -1018,8 +1027,9 @@ export default function BookingPage() {
     }
     setSiteCity(String(getSessionSiteCity(selectedSession) || ""));
     const codes = getPrometricCodes(selectedSession);
-    if (codes[0]?.code || codes[0]?.language_code) setLanguageCode(String(codes[0].code || codes[0].language_code));
-  }, [selectedSession, selectedCenterId]);
+    const liveCode = codes[0]?.code || codes[0]?.language_code;
+    setLanguageCode(String(liveCode || categoryLanguageCodes[0]?.code || "LOANN"));
+  }, [selectedSession, selectedCenterId, categoryLanguageCodes]);
 
   // Fetch session detail (status + seats) for the selected session
   useEffect(() => {
@@ -1709,7 +1719,7 @@ export default function BookingPage() {
               <span className="bk-field-label">Language <b>*</b></span>
               <select value={languageCode} onChange={(e) => setLanguageCode(e.target.value)}>
                 <option value="">Select language</option>
-                {categoryLanguageCodes.map((item) => (
+                {languageOptions.map((item) => (
                   <option key={item.code} value={item.code}>{item.name}</option>
                 ))}
               </select>
