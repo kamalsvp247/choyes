@@ -877,16 +877,27 @@ export default function BookingPage() {
         const data: any = await api(`/live/pacc-exam-sessions?${params.toString()}`);
         if (!active) return;
         const rows = Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
+        const selectedCenter = centerOptions.find((item) => String(item.siteId) === String(selectedCenterId));
         const centreRows = rows.filter((row: any) => {
           const site = String(getSessionSiteId(row) || "").trim();
           return !site || site === String(selectedCenterId).trim();
         });
         if (centreRows.length) {
+          const boundRows = centreRows.map((row: any) => ({
+            ...row,
+            site_id: String(selectedCenterId),
+            test_center: {
+              ...(row?.test_center || {}),
+              site_id: String(selectedCenterId),
+              id: row?.test_center?.id ?? String(selectedCenterId),
+              name: row?.test_center?.name || selectedCenter?.name || "",
+            },
+          }));
           setAllDateSessions((previous) => {
             const existing = previous.filter((row: any) => String(getSessionSiteId(row)) !== String(selectedCenterId));
-            return [...existing, ...centreRows];
+            return [...existing, ...boundRows];
           });
-          setSessions(centreRows);
+          setSessions(boundRows);
         }
       } catch {
         // The date-scoped request remains the primary source; do not replace
@@ -894,7 +905,7 @@ export default function BookingPage() {
       }
     })();
     return () => { active = false; };
-  }, [selectedCenterId, selectedCity, availableDate, selectedOccupationId]);
+  }, [selectedCenterId, selectedCity, availableDate, selectedOccupationId, centerOptions]);
 
   // Legacy local center mappings are intentionally not used for the live SVP
   // selection path. The live proxy enriches every center-scoped session with
