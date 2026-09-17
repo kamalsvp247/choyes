@@ -598,7 +598,7 @@ export default function BookingPage() {
   useEffect(() => {
     if (!selectedOccupation) return;
     setCategoryId(String(selectedOccupation.categoryId || ""));
-    setLanguageCode("");
+    setLanguageCode(String(selectedOccupation.languageCodes?.[0]?.code || "LOBEN"));
     setMethodology(String(selectedOccupation.methodology || "in_person"));
     setSelectedCity(""); setAvailableDate(""); setAvailableDateEntries([]); setLiveCityOptions([]); setSessions([]);
     setCityCenterOptions([]); setDateScopedCenters(null); setLoadingCenterAvailability(false);
@@ -634,11 +634,30 @@ export default function BookingPage() {
         const data = await api(`/available-dates?${params.toString()}`);
         if (!active) return;
         const rawDates = data?.available_dates || data?.dates || data?.data || (Array.isArray(data) ? data : []);
-        const entries = normalizeAvailableDateEntries(rawDates);
-        const cities = [...new Set(entries.map((e) => e.city).filter(Boolean))].sort();
+        const entries = normalizeAvailableDateEntries(rawDates).filter((entry) => entry.city);
+        // The calendar may advertise a city/date before a bookable session is
+        // available. Validate each pair against the live T2Hub session route
+        // so the selector only shows cities that have sessions for this
+        // occupation.
+        const liveEntries = (await Promise.all(
+          entries.map(async (entry) => {
+            try {
+              const sessionData: any = await api(`/t2hub/pacc-exam-sessions?${new URLSearchParams({
+                occupation_id: String(selectedOccupationId),
+                city: entry.city,
+                exam_date: entry.date,
+              }).toString()}`);
+              const liveSessions = Array.isArray(sessionData?.sessions) ? sessionData.sessions : pickArray(sessionData);
+              return liveSessions.length ? entry : null;
+            } catch {
+              return null;
+            }
+          }),
+        )).filter((entry): entry is { city: string; date: string } => Boolean(entry));
+        const cities = [...new Set(liveEntries.map((e) => e.city))].sort();
         setLiveCityOptions(cities);
-        setAvailableDateEntries(entries);
-        setSelectedCity((prev) => (prev && cities.includes(prev) ? prev : cities[0] || prev || ""));
+        setAvailableDateEntries(liveEntries);
+        setSelectedCity((prev) => (prev && cities.includes(prev) ? prev : cities[0] || ""));
       } catch (err: any) { if (!active) return; setAvailableDateEntries([]); setError(isT2HubSessionMissing(err) ? T2HUB_SESSION_MISSING_MESSAGE : (err?.message || "Failed to load available dates")); }
       finally { if (active) setLoadingDates(false); }
     })();
