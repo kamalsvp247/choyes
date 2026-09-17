@@ -147,7 +147,7 @@ export default function T2HubLivePage() {
     api("/live/occupations").then((data) => {
       const occs = data?.occupations || (Array.isArray(data) ? data : []);
       setAllOccupations(occs);
-      if (occs.length > 0 && categoryId === "") setCategoryId(occs[0].id || "");
+      if (occs.length > 0 && categoryId === "") setCategoryId(occs[0].occupation_id || occs[0].id || "");
     }).catch(() => {}).finally(() => setLoadingOccupations(false));
   }, []);
 
@@ -160,16 +160,14 @@ export default function T2HubLivePage() {
       .finally(() => setLoading(false));
   }, [division, categoryId]);
 
-  const categories = useMemo(() => {
-    const map = new Map<number, { id: number; name: string; count: number }>();
-    allOccupations.forEach((o) => {
-      const catId = o.id ?? o.category_id;
-      const catName = o.category_name || `Category ${catId}`;
-      if (!catId) return;
-      if (map.has(catId)) { map.get(catId)!.count++; } else { map.set(catId, { id: catId, name: catName, count: 1 }); }
-    });
-    return [...map.values()].sort((a, b) => b.count - a.count);
-  }, [allOccupations]);
+  const occupations = useMemo(() => allOccupations
+    .map((o: any) => ({
+      id: o.occupation_id ?? o.id,
+      name: o.english_name || o.name || o.category_name || `Occupation ${o.occupation_id ?? o.id}`,
+      key: o.occupation_key || "",
+    }))
+    .filter((o: any) => o.id)
+    .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name))), [allOccupations]);
 
   const fetchTestCenters = useCallback(async () => {
     setLoading(true); setError(null); setResult(null); setRawJson(null);
@@ -184,7 +182,7 @@ export default function T2HubLivePage() {
   const fetchPaccSessions = useCallback(async () => {
     setLoading(true); setError(null); setResult(null); setRawJson(null);
     try {
-      const data = await api(`/live/pacc-exam-sessions?category_id=${categoryId}&city=${encodeURIComponent(division)}&exam_date=${examDate}`);
+      const data = await api(`/live/pacc-exam-sessions?occupation_id=${categoryId}&city=${encodeURIComponent(division)}&exam_date=${examDate}`);
       setResult({ type: "pacc-sessions", data });
       setRawJson(JSON.stringify(data, null, 2));
     } catch (e: any) { setError(e.message); }
@@ -194,7 +192,7 @@ export default function T2HubLivePage() {
   const fetchPaccSessionsForDate = useCallback(async (date: string) => {
     setLoading(true); setError(null); setResult(null); setRawJson(null);
     try {
-      const data = await api(`/live/pacc-exam-sessions?category_id=${categoryId}&city=${encodeURIComponent(division)}&exam_date=${date}`);
+      const data = await api(`/live/pacc-exam-sessions?occupation_id=${categoryId}&city=${encodeURIComponent(division)}&exam_date=${date}`);
       setResult({ type: "pacc-sessions", data });
       setRawJson(JSON.stringify(data, null, 2));
     } catch (e: any) { setError(e.message); }
@@ -204,7 +202,7 @@ export default function T2HubLivePage() {
   const fetchAvailableDates = useCallback(async () => {
     setLoading(true); setError(null); setResult(null); setRawJson(null);
     try {
-      const data = await api(`/live/exam-available-dates?category_id=${categoryId}&city=${encodeURIComponent(division)}`);
+      const data = await api(`/live/exam-available-dates?occupation_id=${categoryId}&city=${encodeURIComponent(division)}`);
       setResult({ type: "available-dates", data });
       setRawJson(JSON.stringify(data, null, 2));
     } catch (e: any) { setError(e.message); }
@@ -276,10 +274,10 @@ export default function T2HubLivePage() {
             <div className="tk-field"><label><MapPin size={13} /> Division</label>
               <select value={division} onChange={e => setDivision(e.target.value)}>{DIVISIONS.map(d => <option key={d} value={d}>{d}</option>)}</select>
             </div>
-            <div className="tk-field"><label><Building2 size={13} /> Category</label>
+            <div className="tk-field"><label><Building2 size={13} /> Occupation</label>
               <select value={categoryId} onChange={e => setCategoryId(Number(e.target.value))} disabled={loadingOccupations}>
-                {loadingOccupations ? <option value="">Loading categories...</option> :
-                 categories.map(c => <option key={c.id} value={c.id}>{c.name} ({c.count})</option>)}
+                {loadingOccupations ? <option value="">Loading occupations...</option> :
+                 occupations.map((o: any) => <option key={o.id} value={o.id}>{o.name}{o.key ? ` (${o.key})` : ""}</option>)}
               </select>
             </div>
             <div className="tk-field"><label><CalendarDays size={13} /> Exam Date</label>
