@@ -860,6 +860,42 @@ export default function BookingPage() {
     setSessions(filterSessionsForCenter(allDateSessions, selectedCenterId));
   }, [selectedCenterId]);
 
+  // Re-check the selected centre directly as a final guard. This avoids a
+  // blank dropdown when the all-centres response arrives before its centre
+  // metadata has been resolved in the client.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!selectedCenterId || !selectedCity || !availableDate || !selectedOccupationId) return;
+      try {
+        const params = new URLSearchParams({
+          occupation_id: String(selectedOccupationId),
+          city: String(selectedCity),
+          exam_date: normalizeDateValue(availableDate),
+          test_center_id: String(selectedCenterId),
+        });
+        const data: any = await api(`/live/pacc-exam-sessions?${params.toString()}`);
+        if (!active) return;
+        const rows = Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
+        const centreRows = rows.filter((row: any) => {
+          const site = String(getSessionSiteId(row) || "").trim();
+          return !site || site === String(selectedCenterId).trim();
+        });
+        if (centreRows.length) {
+          setAllDateSessions((previous) => {
+            const existing = previous.filter((row: any) => String(getSessionSiteId(row)) !== String(selectedCenterId));
+            return [...existing, ...centreRows];
+          });
+          setSessions(centreRows);
+        }
+      } catch {
+        // The date-scoped request remains the primary source; do not replace
+        // a valid list with an empty result from this best-effort refresh.
+      }
+    })();
+    return () => { active = false; };
+  }, [selectedCenterId, selectedCity, availableDate, selectedOccupationId]);
+
   // Legacy local center mappings are intentionally not used for the live SVP
   // selection path. The live proxy enriches every center-scoped session with
   // its real ID and full name.
