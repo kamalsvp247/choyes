@@ -103,13 +103,17 @@ export default function BookingPage() {
     });
     return Array.from(map.entries()).map(([code, name]) => ({ code, name }));
   }, [occupations, selectedOccupation]);
-  // T2Hub session rows do not include category.prometric_codes. Its live
-  // booking flow uses LOANN as the default English language code, so expose
-  // the same fallback instead of leaving the required selector empty.
+  // T2Hub session rows do not include category.prometric_codes. For the
+  // Bangladesh flow, the existing TakaMol mapping uses LOBEN for Bengali;
+  // keep English available as a secondary option instead of leaving the
+  // required selector empty.
   const languageOptions = useMemo(
     () => categoryLanguageCodes.length
       ? categoryLanguageCodes
-      : [{ code: "LOANN", name: "English (LOANN)" }],
+      : [
+          { code: "LOBEN", name: "Bengali (LOBEN)" },
+          { code: "LOANN", name: "English (LOANN)" },
+        ],
     [categoryLanguageCodes],
   );
 
@@ -1028,7 +1032,7 @@ export default function BookingPage() {
     setSiteCity(String(getSessionSiteCity(selectedSession) || ""));
     const codes = getPrometricCodes(selectedSession);
     const liveCode = codes[0]?.code || codes[0]?.language_code;
-    setLanguageCode(String(liveCode || categoryLanguageCodes[0]?.code || "LOANN"));
+    setLanguageCode(String(liveCode || categoryLanguageCodes[0]?.code || "LOBEN"));
   }, [selectedSession, selectedCenterId, categoryLanguageCodes]);
 
   // Fetch session detail (status + seats) for the selected session
