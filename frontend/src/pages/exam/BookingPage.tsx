@@ -200,8 +200,9 @@ export default function BookingPage() {
     [filteredSessions, sessionId]
   );
   const selectedCenterOption = useMemo(
-    () => centerOptions.find((item) => String(item.siteId) === String(selectedCenterId)) || null,
-    [centerOptions, selectedCenterId]
+    () => centerOptions.find((item) => String(item.siteId) === String(selectedCenterId))
+      || cityCenterOptions.find((item) => String(item.siteId) === String(selectedCenterId)) || null,
+    [centerOptions, cityCenterOptions, selectedCenterId]
   );
   const calendarBaseMonth = calendarMonth || (availableDate ? availableDate.slice(0, 7) : normalizeDateValue(new Date().toISOString()).slice(0, 7));
   const calendarCursorDate = useMemo(() => new Date(`${calendarBaseMonth}-01T00:00:00`), [calendarBaseMonth]);
@@ -733,6 +734,7 @@ export default function BookingPage() {
       }
       setLoadingCenterAvailability(true);
       setSessions([]);
+      setAllDateSessions([]);
       setError("");
       try {
         const data: any = await api(`/fly-pacc-sessions?${new URLSearchParams({
@@ -760,9 +762,8 @@ export default function BookingPage() {
         });
         const normalized = Array.from(centerMap.values()).sort((a, b) => b.sessionCount - a.sessionCount);
         setDateScopedCenters(normalized);
-        setSelectedCenterId("");
+        // Keep the user's centre when refreshing; never choose a different one.
         setSessionId("");
-        setSiteId("");
         setSiteCity(selectedCity);
         setHoldId("");
         setHoldExpiresAt("");
@@ -779,14 +780,13 @@ export default function BookingPage() {
       }
     })();
     return () => { active = false; };
-  }, [selectedCity, availableDate, categoryId]);
+  }, [selectedCity, availableDate, categoryId, sessionReloadKey]);
 
-  // Sessions are already loaded by the date effect above. When the user picks
-  // a center, filter the existing sessions locally — no extra API call needed.
+  // Refilter after a refresh as well as a centre change, including empty results.
   useEffect(() => {
-    if (!selectedCenterId || !allDateSessions.length) return;
+    if (!selectedCenterId) return;
     setSessions(filterSessionsForCenter(allDateSessions, selectedCenterId));
-  }, [selectedCenterId]);
+  }, [selectedCenterId, allDateSessions]);
 
   // Legacy local center mappings are intentionally not used for the live SVP
   // selection path. The live proxy enriches every center-scoped session with
@@ -955,7 +955,7 @@ export default function BookingPage() {
   }, [sessions]);
 
   useEffect(() => {
-    if (loadingCenterAvailability || !selectedCenterId) return;
+    if (loadingCenterAvailability || sessionRetryNotice || !selectedCenterId) return;
     const hasSelected = centerOptions.some((item) => String(item.siteId) === String(selectedCenterId));
     if (!hasSelected) {
       setSelectedCenterId("");
@@ -963,7 +963,7 @@ export default function BookingPage() {
       setHoldId("");
       setHoldExpiresAt("");
     }
-  }, [centerOptions, selectedCenterId]);
+  }, [centerOptions, selectedCenterId, loadingCenterAvailability, sessionRetryNotice]);
 
   useEffect(() => {
     if (!filteredSessions.length) { setSessionId(""); return; }
@@ -1125,8 +1125,9 @@ export default function BookingPage() {
     setStatus("");
     setSessionReloadKey((value) => value + 1);
     const retryMessage =
-      `SVP no longer has an available exam session at ${centerName} for ${availableDate || "the selected date"}. ` +
-      "The old session was cleared. Choose a fresh session for this same centre and date; no other centre will be booked.";
+      `SVP rejected the selected exam session at ${centerName} for ${availableDate || "the selected date"}. ` +
+      "The old session and hold were cleared. Refreshing sessions for this same centre and date; no other centre will be booked. " +
+      "If a session is listed, create a new hold before booking again.";
     setSessionRetryNotice(retryMessage);
     setError(retryMessage);
     return true;
@@ -1208,9 +1209,9 @@ export default function BookingPage() {
         setSessions([]);
         setSessionDetail(null);
         setLiveAvailableSeats(null);
-        setSessionRetryNotice("The selected session is no longer available. The session list was refreshed; please choose another session.");
+        setSessionRetryNotice("The selected session is no longer available. Refreshing sessions for the same centre and date. Create a new hold before booking again.");
         setError("");
-        setStatus("Session unavailable — refreshed sessions are ready. Choose another session.");
+        setStatus("");
         setSessionReloadKey((value) => value + 1);
       } else if (!recoverFromNoExamSession422(err)) {
         setError(err?.data?.error?.message || err?.message || "Failed to create hold");
@@ -1431,6 +1432,7 @@ export default function BookingPage() {
   }
 
   function handleCenterChange(nextCenterId: string) {
+    setSessionRetryNotice("");
     setSelectedCenterId(nextCenterId);
     setSessionId("");
     setSiteId(nextCenterId);
@@ -1502,6 +1504,17 @@ export default function BookingPage() {
 
         {status ? <div className="bk-notice bk-notice--ok">{status}</div> : null}
         {error ? <div className="bk-notice bk-notice--error">{error}</div> : null}
+        {sessionRetryNotice ? (
+          <div className="bk-notice" role="status">
+            {loadingCenterAvailability
+              ? sessionRetryNotice
+              : error
+                ? error
+                : filteredSessions.length
+                  ? "Sessions refreshed for the same centre and date. Select a session and create a new hold before booking again."
+                  : `No sessions returned for ${selectedCenterOption?.name || `site ${selectedCenterId}`} on ${availableDate}. No other centre will be booked.`}
+          </div>
+        ) : null}
 
         {/* Booking form */}
         <section className="bk-panel">
@@ -1636,8 +1649,11 @@ export default function BookingPage() {
 
             <div className="bk-field">
               <span className="bk-field-label">Live SVP test centre <b>*</b></span>
-              <select value={selectedCenterId} onChange={(e) => handleCenterChange(e.target.value)} disabled={!centerOptions.length || loadingCenterAvailability}>
+              <select aria-label="Live SVP test centre" value={selectedCenterId} onChange={(e) => handleCenterChange(e.target.value)} disabled={!centerOptions.length || loadingCenterAvailability}>
                 <option value="">{loadingCenterAvailability ? "Checking centres for this date…" : loadingSessions ? "Loading live centers…" : "Select live SVP test center"}</option>
+                {selectedCenterId && !centerOptions.some((item) => String(item.siteId) === String(selectedCenterId)) ? (
+                  <option value={selectedCenterId} disabled>{selectedCenterOption?.name || `Site #${selectedCenterId}`} — no sessions returned</option>
+                ) : null}
                 {centerOptions.map((item) => <option key={item.siteId} value={item.siteId}>{item.name} — Site #{item.siteId}</option>)}
               </select>
             </div>
