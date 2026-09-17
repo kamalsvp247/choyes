@@ -1090,15 +1090,10 @@ export default function BookingPage() {
         `SVP session centre mismatch: selected site ${selectedCenterId}, session belongs to site ${detailCenterId || "unknown"}`
       );
     }
-    const sessionNode = candidates.find((candidate) => candidate && typeof candidate === "object") || detail;
-    const status = String(sessionNode?.status || sessionNode?.state || "").toLowerCase();
-    const availableSeats = sessionNode?.available_seats ?? sessionNode?.seats_available ?? sessionNode?.remaining_seats;
-    if (status && !["scheduled", "active", "available", "open"].includes(status)) {
-      throw { statusCode: 409, code: "SESSION_UNAVAILABLE", message: "Selected session is no longer available" };
-    }
-    if (availableSeats != null && Number(availableSeats) <= 0) {
-      throw { statusCode: 409, code: "SESSION_UNAVAILABLE", message: "Selected session has no available seats" };
-    }
+    // Do not reject on status/seat fields from this detail lookup. Refreshed
+    // T2Hub sessions can carry stale or incomplete availability metadata here;
+    // the live temporary-seats endpoint is the authoritative hold check. Keep
+    // only the center binding guard above so a hold cannot target another site.
     return detail;
   }
 
