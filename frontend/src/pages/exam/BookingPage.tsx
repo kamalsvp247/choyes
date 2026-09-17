@@ -1151,14 +1151,11 @@ export default function BookingPage() {
     if (rowCenterId && expectedCenterId && rowCenterId !== expectedCenterId) {
       throw new Error(`Selected T2Hub session belongs to site ${rowCenterId}, not site ${expectedCenterId}`);
     }
-    const status = String(sessionNode?.status || sessionNode?.state || "").toLowerCase();
-    const availableSeats = sessionNode?.available_seats ?? sessionNode?.seats_available ?? sessionNode?.remaining_seats;
-    if (status && !["scheduled", "active", "available", "open"].includes(status)) {
-      throw { statusCode: 409, code: "SESSION_UNAVAILABLE", message: "Selected session is no longer available" };
-    }
-    if (availableSeats != null && Number(availableSeats) <= 0) {
-      throw { statusCode: 409, code: "SESSION_UNAVAILABLE", message: "Selected session has no available seats" };
-    }
+    // T2Hub rows can contain stale or incomplete status/seat metadata while
+    // the live temporary-seats endpoint still has the authoritative hold
+    // availability. Rejecting here caused false "Session unavailable" errors
+    // before the hold request was sent. Keep the identity and centre guards
+    // above so a hold cannot target another centre.
     return sessionNode;
   }
 
