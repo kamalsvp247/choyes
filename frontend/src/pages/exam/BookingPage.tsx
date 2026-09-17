@@ -566,11 +566,12 @@ export default function BookingPage() {
     (async () => {
       setLoadingOccupations(true); setError("");
       try {
-        // T2Hub is the source of truth for the occupation catalogue used by
-        // the T2Hub date/session flow. Do not use the generic SVP occupations
-        // route here because it can return a different catalogue/identifier
-        // set.
-        const data = await api(`/t2hub/occupations?per_page=1000&locale=en`);
+        // Workshop Worker (SVP occupation_id 2033) is present in the SVP
+        // occupation catalogue but is not returned by T2Hub's category-only
+        // /pacc/occupations catalogue. Keep SVP as the occupation selector
+        // source; the selected occupation's cities, dates, centres, sessions
+        // and seats still come exclusively from T2Hub below.
+        const data = await api(`/occupations?per_page=1000&locale=en`);
         const arr = pickArray(data);
         const seen = new Set<string>();
         const unique = arr.filter((it: any) => {
