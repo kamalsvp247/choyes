@@ -1501,7 +1501,42 @@ export default function BookingPage() {
     setHoldExpiresAt("");
     setReservationId("");
     setPaymentSession(null);
-    setStatus(nextCenterId ? "Test center selected. Loading center-specific exam sessions." : "");
+    if (!nextCenterId) {
+      setSessions(allDateSessions);
+      setStatus("");
+      return;
+    }
+
+    // The initial city/date lookup is intentionally broad and may be served by
+    // T2Hub for discovery. Once a centre is selected, replace that list with
+    // the official SVP session list for this exact centre. This prevents a
+    // stale T2Hub encrypted ID from reaching temporary-seats or reservations.
+    setLoadingSessions(true);
+    setError("");
+    setStatus("Test center selected. Loading fresh SVP sessions for this centre.");
+    const params = new URLSearchParams({
+      category_id: String(selectedOccupation?.categoryId || categoryId || ""),
+      city: String(selectedCity),
+      exam_date: String(availableDate),
+      test_center_id: String(nextCenterId),
+    });
+    void api(`/exam-sessions?${params.toString()}`)
+      .then((data: any) => {
+        const freshSessions = Array.isArray(data?.exam_sessions)
+          ? data.exam_sessions
+          : Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
+        setSessions(freshSessions);
+        setAllDateSessions(freshSessions);
+        setStatus(freshSessions.length
+          ? "Fresh SVP sessions loaded for the selected centre."
+          : "SVP has no available session for this centre and date.");
+      })
+      .catch((err: any) => {
+        setSessions([]);
+        setSessionId("");
+        setError(err?.message || "Failed to load fresh SVP sessions");
+      })
+      .finally(() => setLoadingSessions(false));
   }
 
   function handleSessionChange(nextSessionId: string) {
