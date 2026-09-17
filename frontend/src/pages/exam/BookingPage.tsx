@@ -641,29 +641,15 @@ export default function BookingPage() {
         const data = await api(`/live/exam-available-dates?${params.toString()}`);
         if (!active) return;
         const rawDates = data?.available_dates || data?.dates || data?.data || (Array.isArray(data) ? data : []);
+        // Treat the calendar as the source of truth for the city/date
+        // selectors. A session lookup can legitimately be empty while its
+        // centre/session data is refreshing; filtering the calendar through
+        // that secondary request made the whole booking form appear blank.
+        // The selected date is validated again by the centre/session request.
         const entries = normalizeAvailableDateEntries(rawDates).filter((entry) => entry.city);
-        // The calendar may advertise a city/date before a bookable session is
-        // available. Validate each pair against the live T2Hub session route
-        // so the selector only shows cities that have sessions for this
-        // occupation.
-        const liveEntries = (await Promise.all(
-          entries.map(async (entry) => {
-            try {
-              const sessionData: any = await api(`/live/pacc-exam-sessions?${new URLSearchParams({
-                occupation_id: String(selectedOccupationId),
-                city: entry.city,
-                exam_date: entry.date,
-              }).toString()}`);
-              const liveSessions = Array.isArray(sessionData?.sessions) ? sessionData.sessions : pickArray(sessionData);
-              return liveSessions.length ? entry : null;
-            } catch {
-              return null;
-            }
-          }),
-        )).filter((entry): entry is { city: string; date: string } => Boolean(entry));
-        const cities = [...new Set(liveEntries.map((e) => e.city))].sort();
+        const cities = [...new Set(entries.map((e) => e.city))].sort();
         setLiveCityOptions(cities);
-        setAvailableDateEntries(liveEntries);
+        setAvailableDateEntries(entries);
         setSelectedCity((prev) => (prev && cities.includes(prev) ? prev : cities[0] || ""));
       } catch (err: any) { if (!active) return; setAvailableDateEntries([]); setError(isT2HubSessionMissing(err) ? T2HUB_SESSION_MISSING_MESSAGE : (err?.message || "Failed to load available dates")); }
       finally { if (active) setLoadingDates(false); }
@@ -763,7 +749,8 @@ export default function BookingPage() {
 
   // When a date is selected, fetch ALL sessions for that date in one call.
   // T2Hub's date and session endpoints use the SVP occupation identifier for
-  // this flow; do not reinterpret it as a T2Hub category-group identifier.
+  // this flow, but some deployments also require category_id. Send both when
+  // available rather than silently receiving an empty session list.
   // Centers are derived from the response — only centers with sessions appear.
   useEffect(() => {
     let active = true;
@@ -779,11 +766,13 @@ export default function BookingPage() {
       setSessions([]);
       setError("");
       try {
-        const data: any = await api(`/live/pacc-exam-sessions?${new URLSearchParams({
+        const sessionParams = new URLSearchParams({
           occupation_id: String(selectedOccupationId),
           city: String(selectedCity),
           exam_date: availableDate,
-        }).toString()}`);
+        });
+        if (categoryId) sessionParams.set("category_id", String(categoryId));
+        const data: any = await api(`/live/pacc-exam-sessions?${sessionParams.toString()}`);
         if (!active) return;
         const rawSessions = Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
         // T2Hub may return centre metadata in `sites` while individual
@@ -853,7 +842,7 @@ export default function BookingPage() {
       }
     })();
     return () => { active = false; };
-  }, [selectedCity, availableDate, selectedOccupationId]);
+  }, [selectedCity, availableDate, selectedOccupationId, categoryId]);
 
   // Sessions are already loaded by the date effect above. When the user picks
   // a center, filter the existing sessions locally — no extra API call needed.
