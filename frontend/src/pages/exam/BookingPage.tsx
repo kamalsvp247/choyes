@@ -736,7 +736,8 @@ export default function BookingPage() {
           siteId: String(center.test_center_id ?? center.id ?? center.site_id ?? ""),
           name: String(center.test_center_name ?? center.name ?? center.title ?? "").trim(),
           city: String(center.city ?? center.test_center_city ?? selectedCity).trim(),
-        })).filter((center: any) => center.siteId && center.name);
+        })).filter((center: any) => center.siteId && center.name &&
+          String(center.city).trim().toLowerCase() === String(selectedCity).trim().toLowerCase());
         setCityCenterOptions(normalized);
       } catch (err: any) {
         if (!active) return;
@@ -784,7 +785,13 @@ export default function BookingPage() {
           const id = String(site?.site_id ?? site?.test_center_id ?? site?.id ?? site?.center ?? "").trim();
           if (id) siteById.set(id, site);
         });
-        const allSessions = rawSessions.map((session: any) => {
+        const allSessions = rawSessions.filter((session: any) => {
+          const sessionCity = String(
+            session?.site_city || session?.center_city || session?.test_center_city ||
+            session?.test_center?.city || session?.test_center?.test_center_city || ""
+          ).trim();
+          return !sessionCity || sessionCity.toLowerCase() === String(selectedCity).trim().toLowerCase();
+        }).map((session: any) => {
           const sessionSiteId = String(
             session?.site_id ?? session?.test_center_id ?? session?.test_center?.site_id ??
             session?.test_center?.test_center_id ?? session?.test_center?.id ?? ""
