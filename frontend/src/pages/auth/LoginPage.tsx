@@ -184,6 +184,17 @@ export default function LoginPage() {
     }
   }
 
+  function openYopmailAndLogin() {
+    // Keep this explicitly user-triggered so popup blockers do not interfere.
+    // Only the mailbox page is opened; credentials are never sent or automated.
+    const username = login.trim().replace(/@yopmail\.com$/i, "");
+    const yopmailUrl = username
+      ? `https://yopmail.com/en/?login=${encodeURIComponent(username)}`
+      : "https://yopmail.com/en/";
+    window.open(yopmailUrl, "_blank", "noopener,noreferrer");
+    window.open(`${window.location.origin}/auth/login`, "_blank", "noopener,noreferrer");
+  }
+
   return (
     <main className="ap-shell ap-login-shell">
       {/* Left – Brand showcase */}
@@ -297,6 +308,9 @@ export default function LoginPage() {
               <p className="ap-hint">
                 New labor applicant? <Link to="/auth/register">Create an SVP account</Link>
               </p>
+              <button type="button" className="ap-link" onClick={openYopmailAndLogin}>
+                Open Yopmail and SVP login in new tabs
+              </button>
             </form>
           ) : (
             <form className="ap-form" onSubmit={submitToken}>
