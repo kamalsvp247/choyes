@@ -1142,23 +1142,21 @@ export default function BookingPage() {
   }, [sessionId, selectedSession, selectedCenterId]);
 
   async function verifySelectedSessionCenter(selectedSessionPayloadId: string | number) {
-    const detail: any = await api(`/exam-session/${encodeURIComponent(String(selectedSessionPayloadId))}?locale=en`);
-    const candidates = [detail, detail?.exam_session, detail?.data, detail?.data?.exam_session];
-    const detailCenterId = candidates
-      .map((candidate) => getSessionSiteId(candidate))
-      .find((value) => value != null && String(value).trim() !== "");
-    const verifiedCenterId = resolveVerifiedSessionCenterId({
-      detail,
-      selectedSession,
-      expectedSessionId: selectedSessionPayloadId,
-      expectedCenterId: selectedCenterId,
-    });
-    if (!verifiedCenterId) {
-      throw new Error(
-        `SVP session centre mismatch: selected site ${selectedCenterId}, session belongs to site ${detailCenterId || "unknown"}`
-      );
+    // T2Hub is the source of truth for the session selected on this page.
+    // T2Hub session IDs are not always resolvable through SVP's
+    // /exam-session/:id detail route; calling that route here incorrectly
+    // turns a valid T2Hub row into the "SVP no longer has a session" error.
+    // SVP authentication is still required by the hold and reservation APIs.
+    const sessionNode: any = selectedSession;
+    const rowSessionId = getSessionPayloadId(getSessionId(sessionNode) || selectedSessionPayloadId);
+    if (rowSessionId == null || String(rowSessionId) !== String(selectedSessionPayloadId)) {
+      throw new Error("The selected T2Hub exam session is no longer in the current session list");
     }
-    const sessionNode = candidates.find((candidate) => candidate && typeof candidate === "object") || detail;
+    const rowCenterId = String(getSessionSiteId(sessionNode) || "").trim();
+    const expectedCenterId = String(selectedCenterId || "").trim();
+    if (rowCenterId && expectedCenterId && rowCenterId !== expectedCenterId) {
+      throw new Error(`Selected T2Hub session belongs to site ${rowCenterId}, not site ${expectedCenterId}`);
+    }
     const status = String(sessionNode?.status || sessionNode?.state || "").toLowerCase();
     const availableSeats = sessionNode?.available_seats ?? sessionNode?.seats_available ?? sessionNode?.remaining_seats;
     if (status && !["scheduled", "active", "available", "open"].includes(status)) {
@@ -1167,7 +1165,7 @@ export default function BookingPage() {
     if (availableSeats != null && Number(availableSeats) <= 0) {
       throw { statusCode: 409, code: "SESSION_UNAVAILABLE", message: "Selected session has no available seats" };
     }
-    return detail;
+    return sessionNode;
   }
 
   function assertResponseMatchesSelectedCenter(payload: any, responseLabel: string) {
