@@ -1092,9 +1092,10 @@ Deno.serve(async (req) => {
       params.delete("locale");
       const city = params.get("city") || "";
       const categoryId = params.get("category_id") || "";
+      const occupationId = params.get("occupation_id") || "";
       const examDate = params.get("exam_date") || "";
-      if (!city || !categoryId || !examDate) {
-        throw { statusCode: 400, message: "Missing city, category_id, or exam_date" };
+      if (!city || (!categoryId && !occupationId) || !examDate) {
+        throw { statusCode: 400, message: "Missing city, category_id or occupation_id, or exam_date" };
       }
 
       const centersData = await t2hubFetch(t2hubQuery("/test-centers", new URLSearchParams({ division: city })), req);
