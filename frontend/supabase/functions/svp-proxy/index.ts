@@ -1392,45 +1392,20 @@ Deno.serve(async (req) => {
     // ΓöÇΓöÇ Exam sessions (enriched with available_seats) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     if (req.method === "GET" && path === "/exam-sessions") {
       const sessionParams = new URLSearchParams(query);
-      const city = sessionParams.get("city") || "";
-      const categoryId = sessionParams.get("category_id") || "";
-      const examDate = sessionParams.get("exam_date") || "";
-      if (city && categoryId && examDate) {
-        try {
-          sessionParams.delete("locale");
-          const [centersData, sessionsData] = await Promise.all([
-            t2hubFetch(t2hubQuery("/test-centers", new URLSearchParams({ division: city })), req),
-            t2hubFetch(t2hubQuery("/exam-sessions-bulk", sessionParams), req),
-          ]);
-          const centers: any[] = Array.isArray(centersData?.sites) ? centersData.sites : [];
-          const centerByName = new Map(
-            centers.map((center: any) => [String(center?.name || "").trim().toLowerCase(), center])
-          );
-          const requestedCenterId = String(sessionParams.get("test_center_id") || "").trim();
-          const normalizedSessions = (Array.isArray(sessionsData?.sessions) ? sessionsData.sessions : [])
-            .map((item: any) => normalizeT2HubSession(item, centerByName));
-          const sessions = requestedCenterId
-            ? filterLiveSessionsForCenter(normalizedSessions, requestedCenterId)
-            : normalizedSessions.filter((session: any) => Boolean(getSessionCenterId(session)));
-          return json({
-            ...sessionsData,
-            sessions,
-            exam_sessions: sessions,
-            sites: centers,
-            ...(requestedCenterId ? { test_center_id: requestedCenterId } : {}),
-          });
-        } catch {
-          // Fall back to the official SVP endpoint below if t2hub is unavailable.
-        }
-      }
+      sessionParams.delete("locale");
+      sessionParams.set("country_id", sessionParams.get("country_id") || SVP_COUNTRY_ID);
+      sessionParams.set("available_seats", "greater_than::0");
 
+      // Booking discovery must use the same official SVP source as the hold and
+      // reservation endpoints. Never substitute T2Hub bulk rows here: their
+      // encrypted IDs are not valid official SVP exam_session identifiers.
       const listData: any = await svpFetch(
-        buildPath("/api/v1/individual_labor_space/exam_sessions", query),
+        buildPath("/api/v1/individual_labor_space/exam_sessions", sessionParams.toString()),
         { method: "GET", token: svpToken }
       );
-      const sessions: any[] = listData?.exam_sessions || [];
+      const sessions: any[] = extractSessions(listData);
 
-      // If list doesn't include available_seats, fetch each detail in parallel
+      // If list doesn't include available_seats, fetch each detail in parallel.
       if (sessions.length > 0 && sessions[0]?.available_seats === undefined) {
         const enriched = await Promise.all(
           sessions.map(async (s: any) => {
@@ -1450,10 +1425,10 @@ Deno.serve(async (req) => {
             }
           })
         );
-        listData.exam_sessions = enriched;
+        return json({ ...listData, exam_sessions: enriched, sessions: enriched });
       }
 
-      return json(listData);
+      return json({ ...listData, exam_sessions: sessions, sessions });
     }
 
     // ΓöÇΓöÇ User balance (auto-detect SVP user ID) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ

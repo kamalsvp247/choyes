@@ -570,11 +570,10 @@ export default function BookingPage() {
     (async () => {
       setLoadingOccupations(true); setError("");
       try {
-        // Workshop Worker (SVP occupation_id 2033) is present in the SVP
-        // occupation catalogue but is not returned by T2Hub's category-only
-        // /pacc/occupations catalogue. Keep SVP as the occupation selector
-        // source; the selected occupation's cities, dates, centres, sessions
-        // and seats still come exclusively from T2Hub below.
+        // Keep SVP as the occupation selector source. The selected occupation's
+        // dates, centres, sessions, seats, holds, and reservations must all use
+        // the official SVP API so an encrypted T2Hub session can never reach
+        // the hold or confirm endpoints.
         const data = await api(`/occupations?per_page=1000&locale=en`);
         const arr = pickArray(data);
         const seen = new Set<string>();
@@ -634,14 +633,13 @@ export default function BookingPage() {
       if (!selectedOccupationId) { setAvailableDateEntries([]); setAvailableDate(""); return; }
       setLoadingDates(true); setError("");
       try {
-        // Use the same public T2Hub calendar route as the live page. The
-        // authenticated SVP available-dates route can return HTTP 200 with an
-        // empty calendar when its session is stale, which leaves all dependent
-        // booking fields blank even though T2Hub has data.
+        // Use the authenticated SVP calendar. Do not fall back to T2Hub here:
+        // a discovery-only calendar can contain dates whose sessions are not
+        // usable by the official hold/confirm endpoints.
         const params = new URLSearchParams({
-          occupation_id: String(selectedOccupationId),
+          category_id: String(selectedOccupation?.categoryId || categoryId || selectedOccupationId),
         });
-        const data = await api(`/live/exam-available-dates?${params.toString()}`);
+        const data = await api(`/available-dates?${params.toString()}`);
         if (!active) return;
         const rawDates = data?.available_dates || data?.dates || data?.data || (Array.isArray(data) ? data : []);
         // Treat the calendar as the source of truth for the city/date
@@ -751,11 +749,9 @@ export default function BookingPage() {
     return () => { active = false; };
   }, [selectedCity]);
 
-  // When a date is selected, fetch ALL sessions for that date in one call.
-  // T2Hub's date and session endpoints use the SVP occupation identifier for
-  // this flow. Sending category_id as well makes these endpoints return an
-  // empty 200 response, so keep the request keyed by occupation_id only.
-  // Centers are derived from the response — only centers with sessions appear.
+  // When a date is selected, fetch ALL sessions for that date from official
+  // SVP. Centers are derived from the response — only centres with live
+  // official sessions appear.
   useEffect(() => {
     let active = true;
     (async () => {
@@ -771,11 +767,11 @@ export default function BookingPage() {
       setError("");
       try {
         const sessionParams = new URLSearchParams({
-          occupation_id: String(selectedOccupationId),
+          category_id: String(selectedOccupation?.categoryId || categoryId || selectedOccupationId),
           city: String(selectedCity),
           exam_date: availableDate,
         });
-        const data: any = await api(`/live/pacc-exam-sessions?${sessionParams.toString()}`);
+        const data: any = await api(`/exam-sessions?${sessionParams.toString()}`);
         if (!active) return;
         const rawSessions = Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
         // T2Hub may return centre metadata in `sites` while individual
@@ -874,7 +870,7 @@ export default function BookingPage() {
           exam_date: normalizeDateValue(availableDate),
           test_center_id: String(selectedCenterId),
         });
-        const data: any = await api(`/live/pacc-exam-sessions?${params.toString()}`);
+        const data: any = await api(`/exam-sessions?${params.toString()}`);
         if (!active) return;
         const rows = Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
         const selectedCenter = centerOptions.find((item) => String(item.siteId) === String(selectedCenterId));
@@ -1198,12 +1194,12 @@ export default function BookingPage() {
       throw new Error("Select an occupation, date, city, and test centre first");
     }
     const params = new URLSearchParams({
-      occupation_id: String(selectedOccupationId),
+      category_id: String(selectedOccupation?.categoryId || categoryId || selectedOccupationId),
       city: String(selectedCity),
       exam_date: normalizeDateValue(availableDate),
       test_center_id: String(selectedCenterId),
     });
-    const data: any = await api(`/live/pacc-exam-sessions?${params.toString()}`);
+    const data: any = await api(`/exam-sessions?${params.toString()}`);
     const rows = Array.isArray(data?.sessions)
       ? data.sessions
       : Array.isArray(data?.exam_sessions) ? data.exam_sessions : pickArray(data);
@@ -1221,7 +1217,8 @@ export default function BookingPage() {
   }
 
   async function verifySelectedSessionCenter(selectedSessionPayloadId: string | number, sessionNode: any = selectedSession) {
-    // T2Hub rows are display-only; hold and reservation use the official SVP row.
+    // The selected row is already an official SVP row; hold and reservation
+    // must continue using that same authoritative session identity.
     const rowSessionId = getSessionPayloadId(getSessionId(sessionNode) || selectedSessionPayloadId);
     if (rowSessionId == null || String(rowSessionId) !== String(selectedSessionPayloadId)) {
       throw new Error("The selected T2Hub exam session is no longer in the current session list");
@@ -1231,11 +1228,10 @@ export default function BookingPage() {
     if (rowCenterId && expectedCenterId && rowCenterId !== expectedCenterId) {
       throw new Error(`Selected T2Hub session belongs to site ${rowCenterId}, not site ${expectedCenterId}`);
     }
-    // T2Hub rows can contain stale or incomplete status/seat metadata while
-    // the live temporary-seats endpoint still has the authoritative hold
-    // availability. Rejecting here caused false "Session unavailable" errors
-    // before the hold request was sent. Keep the identity and centre guards
-    // above so a hold cannot target another centre.
+    // Session list rows can contain stale or incomplete status/seat metadata
+    // while the live temporary-seats endpoint still has authoritative hold
+    // availability. Keep the identity and centre guards above so a hold cannot
+    // target another centre.
     return sessionNode;
   }
 
@@ -1592,10 +1588,9 @@ export default function BookingPage() {
       return;
     }
 
-    // The initial city/date lookup is intentionally broad and may be served by
-    // T2Hub for discovery. Once a centre is selected, replace that list with
-    // the official SVP session list for this exact centre. This prevents a
-    // stale T2Hub encrypted ID from reaching temporary-seats or reservations.
+    // Re-query the official SVP session list for this exact centre. This keeps
+    // the selected session ID authoritative from discovery through hold and
+    // confirmation; no T2Hub encrypted ID is accepted on this path.
     setLoadingSessions(true);
     setError("");
     setStatus("Test center selected. Loading fresh SVP sessions for this centre.");
