@@ -769,14 +769,20 @@ export default function BookingPage() {
       setSessions([]);
       setError("");
       try {
+        // SVP's session listing filters by occupation_id. category_id returns
+        // HTTP 200 with no rows even when the calendar has valid sessions.
         const sessionParams = new URLSearchParams({
-          category_id: String(selectedOccupation?.categoryId || categoryId || selectedOccupationId),
+          occupation_id: String(selectedOccupationId),
           city: String(selectedCity),
           exam_date: availableDate,
         });
         const data: any = await api(`/exam-sessions?${sessionParams.toString()}`);
         if (!active) return;
-        const rawSessions = Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
+        // The official response uses `exam_sessions`; the compatibility
+        // `sessions` field may be present but empty.
+        const rawSessions = Array.isArray(data?.exam_sessions)
+          ? data.exam_sessions
+          : Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
         // T2Hub may return centre metadata in `sites` while individual
         // sessions contain only a site/test-centre ID. Enrich those sessions
         // before deriving the centre selector so the UI shows the real centre
@@ -830,7 +836,11 @@ export default function BookingPage() {
           }
         });
         const normalized = Array.from(centerMap.values()).sort((a, b) => b.sessionCount - a.sessionCount);
-        setDateScopedCenters(normalized);
+        // Some official SVP session rows contain only city and date, without a
+        // site ID. Keep the verified city center roster available in that
+        // case; selecting a center triggers the center-scoped request below,
+        // which binds the returned sessions to that center before a hold.
+        setDateScopedCenters(normalized.length ? normalized : allSessions.length ? null : []);
         setSelectedCenterId("");
         setSessionId("");
         setSiteId("");
@@ -875,7 +885,9 @@ export default function BookingPage() {
         });
         const data: any = await api(`/exam-sessions?${params.toString()}`);
         if (!active) return;
-        const rows = Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
+        const rows = Array.isArray(data?.exam_sessions)
+          ? data.exam_sessions
+          : Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
         const selectedCenter = centerOptions.find((item) => String(item.siteId) === String(selectedCenterId));
         const centreRows = rows.filter((row: any) => {
           const site = String(getSessionSiteId(row) || "").trim();
