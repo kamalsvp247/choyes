@@ -1198,15 +1198,15 @@ export default function BookingPage() {
       throw new Error("Select an occupation, date, city, and test centre first");
     }
     const params = new URLSearchParams({
-      category_id: String(selectedOccupation.categoryId || categoryId || ""),
+      occupation_id: String(selectedOccupationId),
       city: String(selectedCity),
-      exam_date: String(availableDate),
+      exam_date: normalizeDateValue(availableDate),
       test_center_id: String(selectedCenterId),
     });
-    const data: any = await api(`/exam-sessions?${params.toString()}`);
-    const rows = Array.isArray(data?.exam_sessions)
-      ? data.exam_sessions
-      : Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
+    const data: any = await api(`/live/pacc-exam-sessions?${params.toString()}`);
+    const rows = Array.isArray(data?.sessions)
+      ? data.sessions
+      : Array.isArray(data?.exam_sessions) ? data.exam_sessions : pickArray(data);
     const fresh = rows.find((row: any) => {
       const site = getSessionSiteId(row);
       return getSessionId(row) && (!site || String(site) === String(selectedCenterId));
