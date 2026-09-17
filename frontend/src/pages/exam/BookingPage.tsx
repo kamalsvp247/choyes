@@ -744,7 +744,37 @@ export default function BookingPage() {
           exam_date: availableDate,
         }).toString()}`);
         if (!active) return;
-        const allSessions = Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
+        const rawSessions = Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
+        // T2Hub may return centre metadata in `sites` while individual
+        // sessions contain only a site/test-centre ID. Enrich those sessions
+        // before deriving the centre selector so the UI shows the real centre
+        // name instead of `Center #<id>` or an empty option.
+        const sites = Array.isArray(data?.sites) ? data.sites : [];
+        const siteById = new Map<string, any>();
+        sites.forEach((site: any) => {
+          const id = String(site?.site_id ?? site?.test_center_id ?? site?.id ?? site?.center ?? "").trim();
+          if (id) siteById.set(id, site);
+        });
+        const allSessions = rawSessions.map((session: any) => {
+          const sessionSiteId = String(
+            session?.site_id ?? session?.test_center_id ?? session?.test_center?.site_id ??
+            session?.test_center?.test_center_id ?? session?.test_center?.id ?? ""
+          ).trim();
+          const site = sessionSiteId ? siteById.get(sessionSiteId) : undefined;
+          if (!site) return session;
+          const name = String(
+            session?.test_center_name ?? session?.test_center?.name ?? session?.test_center?.test_center_name ??
+            site?.test_center_name ?? site?.name ?? ""
+          ).trim();
+          const city = String(session?.site_city ?? session?.test_center?.city ?? site?.raw_city ?? site?.city ?? selectedCity).trim();
+          return {
+            ...session,
+            site_id: session?.site_id ?? sessionSiteId,
+            test_center_name: name || session?.test_center_name,
+            site_city: city,
+            test_center: session?.test_center || (name ? { id: sessionSiteId, name, city } : session?.test_center),
+          };
+        });
         setAllDateSessions(allSessions);
         setSessions(allSessions);
 
