@@ -1,6 +1,8 @@
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "";
 
 function getBase() {
+  if (API_BASE) return `${API_BASE}/functions/v1`;
   return SUPABASE_URL ? `${SUPABASE_URL}/functions/v1` : "";
 }
 

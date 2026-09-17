@@ -1,0 +1,4 @@
+VITE_SUPABASE_URL=https://xklwzkraobxetxdcysun.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_DmaCr-JGwROOx7VV8srFhQ_wtQfokBf
+VITE_SUPABASE_PROJECT_ID=xklwzkraobxetxdcysun
+VITE_SUPABASE_JWKS_URL=https://xklwzkraobxetxdcysun.supabase.co/auth/v1/.well-known/jwks.json

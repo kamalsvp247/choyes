@@ -1,39 +1,43 @@
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 
-// Two possible backends:
-//  - Supabase edge functions (primary; used whenever VITE_SUPABASE_URL is set)
-//  - The Railway Express backend (frontend/backend/src) as a fallback otherwise.
-// Their route shapes differ:
-//   Supabase : /functions/v1/svp-proxy  /functions/v1/svp-auth
-//   Railway  : /api/svp                 /api/auth
-// Both the base URL and path prefixes are resolved together, so switching
-// backends never silently hits wrong routes.
+// API base URL resolution:
+//  - If VITE_API_BASE_URL is set → use it (for custom domain proxy)
+//  - If VITE_SUPABASE_URL is set → use Supabase directly
+//  - Otherwise → fallback to Railway
 //
-// Set VITE_BACKEND_URL in your .env (or Vercel env vars) to point at the
-// Railway backend. The hardcoded string below is the documented default only —
-// change the env var, never the source.
+// When deployed on Vercel with rewrites, API calls go through:
+//   api.choice-pc-sv.xyz/functions/v1/* → supabase.co/functions/v1/*
 const RAILWAY_URL =
   import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, "") ||
   "https://choyes-production.up.railway.app";
+
+// Use custom domain if available, otherwise use Supabase directly
+const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "";
+
 type FunctionKind = "proxy" | "testCenter";
 
 function resolveBackend() {
+  // Custom domain proxy (api.choice-pc-sv.xyz → Supabase)
+  if (API_BASE) {
+    return {
+      authUsesCookies: false,
+      authBase: `${API_BASE}/functions/v1`,
+      base: `${API_BASE}/functions/v1`,
+      authPrefix: "/svp-auth",
+      registrationUsesCookies: false,
+      registrationBase: `${API_BASE}/functions/v1`,
+      registrationPrefix: "/svp-auth",
+      proxyPrefix: (kind: FunctionKind) => (kind === "proxy" ? "/svp-proxy" : "/test-center-owner"),
+    };
+  }
   if (SUPABASE_URL) {
     const useRailwayRegistration = Boolean(import.meta.env.VITE_BACKEND_URL);
     return {
-      // The proxy verifies the JWT issued by svp-auth.  Never use Railway for
-      // authentication while using the Supabase proxy: the two deployments can
-      // have different JWT_ACCESS_SECRET values, which makes every proxy call
-      // fail with "Invalid signature".
       authUsesCookies: false,
       authBase: `${SUPABASE_URL}/functions/v1`,
       base: `${SUPABASE_URL}/functions/v1`,
       authPrefix: "/svp-auth",
-      // Registration is public and does not create a local application
-      // session.  When Railway is configured, send its multipart requests
-      // there: SVP rejects the Supabase Edge runtime's HTTP/2 connection for
-      // this endpoint with a stream/protocol error.
       registrationUsesCookies: useRailwayRegistration,
       registrationBase: useRailwayRegistration ? RAILWAY_URL : `${SUPABASE_URL}/functions/v1`,
       registrationPrefix: useRailwayRegistration ? "/api/auth" : "/svp-auth",
@@ -48,8 +52,6 @@ function resolveBackend() {
     registrationUsesCookies: true,
     registrationBase: RAILWAY_URL,
     registrationPrefix: "/api/auth",
-    // test-center-owner is a Supabase-only feature (see
-    // supabase/functions/test-center-owner) — no Railway equivalent exists yet.
     proxyPrefix: (kind: FunctionKind) => (kind === "proxy" ? "/api/svp" : null),
   };
 }

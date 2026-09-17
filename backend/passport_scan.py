@@ -1,12 +1,12 @@
 """
 Passport OCR / auto-fill service.
 
-Uses Gemini via the emergentintegrations LlmChat wrapper (Emergent LLM key) to
+Uses Claude Fable via the Experiential gateway (OpenAI-compatible API) to
 extract structured passport fields from an uploaded passport image.
 
 Public entrypoint: `scan_passport_image(image_bytes, mime_type) -> dict`.
 
-Returned shape (always the same keys, empty string when Gemini can't read):
+Returned shape (always the same keys, empty string when Claude can't read):
     {
         "passport_number": str,
         "first_name": str,
@@ -18,7 +18,7 @@ Returned shape (always the same keys, empty string when Gemini can't read):
         "country_code": str,              # 2-letter ISO ("BD", "SA", …)
         "issuing_country": str,           # e.g. "BANGLADESH"
         "confidence": str,                # "high" | "medium" | "low"
-        "raw": str,                       # raw Gemini text, kept for debug
+        "raw": str,                       # raw response text, kept for debug
     }
 """
 from __future__ import annotations
@@ -29,7 +29,6 @@ import json
 import logging
 import os
 import re
-import uuid
 from typing import Any
 
 from PIL import Image
@@ -37,9 +36,9 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 # ── Constants ───────────────────────────────────────────────────────────────
-GEMINI_MODEL = "gemini-2.5-flash"  # fast + accurate for passport OCR; upgrade to gemini-3.5-flash / gemini-3.1-pro-preview if needed
-GEMINI_PROVIDER = "gemini"
-MAX_IMAGE_DIM = 1800  # px — passports are text-dense but Gemini handles up to ~2K well
+EXPERIENTIAL_BASE_URL = "https://api.experientiallabs.ai/v1"
+EXPERIENTIAL_MODEL = "claude-fable-5.1"
+MAX_IMAGE_DIM = 1800  # px — passports are text-dense but Claude handles up to ~2K well
 ACCEPTED_MIME = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
 EMPTY_RESULT: dict[str, str] = {
     "passport_number": "",
@@ -158,42 +157,68 @@ def _coerce(data: dict[str, Any]) -> dict[str, str]:
 
 async def scan_passport_image(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
     """
-    Send the passport image to Gemini and return normalized structured data.
+    Send the passport image to Claude Fable via Experiential gateway and return normalized structured data.
 
-    Raises RuntimeError if EMERGENT_LLM_KEY is missing or Gemini call fails —
+    Raises RuntimeError if EXPLABS_API_KEY is missing or the API call fails —
     the FastAPI route turns that into a 500 with a user-friendly error message.
     """
     if mime_type not in ACCEPTED_MIME:
         raise ValueError(f"Unsupported passport image type: {mime_type}. Use JPEG / PNG / WEBP.")
 
-    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    api_key = os.environ.get("EXPLABS_API_KEY")
     if not api_key:
-        raise RuntimeError("EMERGENT_LLM_KEY is not configured on the backend.")
+        raise RuntimeError("EXPLABS_API_KEY is not configured on the backend.")
 
     normalized_bytes, normalized_mime = _pil_normalize(image_bytes, mime_type)
     b64 = base64.b64encode(normalized_bytes).decode("ascii")
+    data_uri = f"data:{normalized_mime};base64,{b64}"
 
-    # Import lazily so the module can be loaded even when the library is not yet installed in tests.
-    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    import httpx
 
-    chat = LlmChat(
-        api_key=api_key,
-        session_id=f"passport-scan-{uuid.uuid4()}",
-        system_message=SYSTEM_PROMPT,
-    ).with_model(GEMINI_PROVIDER, GEMINI_MODEL)
-
-    user_msg = UserMessage(
-        text="Extract the passport fields from this image and return the JSON object only.",
-        file_contents=[ImageContent(image_base64=b64)],
-    )
+    payload = {
+        "model": EXPERIENTIAL_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT,
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Extract the passport fields from this image and return the JSON object only.",
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": data_uri,
+                        },
+                    },
+                ],
+            },
+        ],
+        "temperature": 0.0,
+        "max_tokens": 1024,
+    }
 
     try:
-        raw_response = await chat.send_message(user_msg)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{EXPERIENTIAL_BASE_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
     except Exception as exc:
-        logger.exception("Gemini passport scan failed")
-        raise RuntimeError(f"Gemini call failed: {exc}") from exc
+        logger.exception("Experiential passport scan failed")
+        raise RuntimeError(f"Experiential gateway call failed: {exc}") from exc
 
-    raw_text = raw_response if isinstance(raw_response, str) else str(raw_response)
+    raw_text = data["choices"][0]["message"]["content"]
     parsed = _parse_json_block(raw_text)
     result = _coerce(parsed) if parsed else dict(EMPTY_RESULT)
     result["raw"] = raw_text[:4000]  # cap for the response payload

@@ -16,6 +16,7 @@
  */
 
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() || "";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || "";
 const TAKAMOL_ENV_URL =
   (import.meta.env.VITE_TAKAMOL_API_URL as string | undefined)?.trim() || "";
 
@@ -24,17 +25,16 @@ const TAKAMOL_RAW_URL = TAKAMOL_ENV_URL || "https://takamol-api.up.railway.app";
 
 /**
  * Where requests actually go:
+ *  - When VITE_API_BASE_URL is set → use custom domain proxy
  *  - When VITE_TAKAMOL_API_URL is set to an absolute URL → directly there
- *    (escape hatch for local/manual testing against Railway).
- *  - Otherwise (the default committed build) → the `takamol-proxy` Supabase
- *    edge function, same pattern as every other `access-*`/`svp-*` call in
- *    this app. This avoids CORS (the function sets its own headers) and
- *    means Vercel no longer needs a hardcoded Railway rewrite.
+ *  - Otherwise → the `takamol-proxy` Supabase edge function
  */
-const isVercelBrowser = typeof window !== "undefined" && /(^|\.)vercel\.app$/.test(window.location.hostname);
-const API_BASE = isVercelBrowser
-  ? "/api/takamol/proxy"
-  : (TAKAMOL_ENV_URL || `${SUPABASE_URL}/functions/v1/takamol-proxy`);
+const isCustomDomain = typeof window !== "undefined" && !window.location.hostname.includes("supabase.co");
+const API_BASE = API_BASE_URL
+  ? `${API_BASE_URL}/functions/v1/takamol-proxy`
+  : isCustomDomain
+    ? `${window.location.origin}/functions/v1/takamol-proxy`
+    : (TAKAMOL_ENV_URL || `${SUPABASE_URL}/functions/v1/takamol-proxy`);
 
 export function getTakamolBaseUrl(): string {
   return TAKAMOL_RAW_URL;
