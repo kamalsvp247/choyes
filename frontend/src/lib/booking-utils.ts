@@ -464,7 +464,26 @@ export function getCenterKey(item: any): string {
 }
 
 export function getPrometricCodes(item: any): any[] {
-  return pickArray(item?.prometric_codes || item?.languages || item?.language_codes);
+  const candidates = [
+    item?.prometric_codes,
+    item?.languages,
+    item?.language_codes,
+    item?.category?.prometric_codes,
+    item?.category?.languages,
+    item?.category?.language_codes,
+    item?.occupation?.prometric_codes,
+    item?.occupation?.languages,
+    item?.occupation?.language_codes,
+    item?.exam_session?.prometric_codes,
+    item?.exam_session?.category?.prometric_codes,
+    item?.data?.prometric_codes,
+    item?.data?.category?.prometric_codes,
+  ];
+  for (const candidate of candidates) {
+    const codes = pickArray(candidate);
+    if (codes.length) return codes;
+  }
+  return [];
 }
 
 function getAvailableDateCity(item: any): string {
