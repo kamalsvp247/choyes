@@ -227,7 +227,7 @@ export default function TakamolBookingPage() {
           <span className={loggedIn ? "tk-badge tk-badge--ok" : "tk-badge tk-badge--warn"}>{loggedIn ? "Live session" : "Login required"}</span>
         </div>
         <div className="tk-hero-actions">
-          {!loggedIn && <a className="tk-btn tk-btn--gold" href="/takamol/agent/login">Login to Takamol</a>}
+          {!loggedIn && <a className="tk-btn tk-btn--gold" href="/auth/login">Sign in to SVP candidate account</a>}
           <button type="button" className="tk-btn tk-btn--sm" onClick={() => refresh()}><CalendarCheck size={14} /> Refresh portal status</button>
         </div>
       </section>

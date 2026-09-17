@@ -222,7 +222,11 @@ async function callFunction<T = any>(
   }
 
   if (!res.ok) {
-    const message = data?.message || data?.error || "Request failed";
+    const code = data?.code || data?.error?.code || data?.details?.code;
+    const upstreamMessage = data?.message || data?.error?.message || data?.error || "Request failed";
+    const message = code === "CANDIDATE_ACCOUNT_REQUIRED"
+      ? "An active SVP candidate session is required. Sign in at /auth/login, then retry this request."
+      : upstreamMessage;
     throw Object.assign(new Error(message), { status: res.status, data });
   }
 
