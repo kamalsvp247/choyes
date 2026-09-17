@@ -637,7 +637,6 @@ export default function BookingPage() {
         const params = new URLSearchParams({
           occupation_id: String(selectedOccupationId),
         });
-        if (categoryId) params.set("category_id", String(categoryId));
         const data = await api(`/live/exam-available-dates?${params.toString()}`);
         if (!active) return;
         const rawDates = data?.available_dates || data?.dates || data?.data || (Array.isArray(data) ? data : []);
@@ -749,8 +748,8 @@ export default function BookingPage() {
 
   // When a date is selected, fetch ALL sessions for that date in one call.
   // T2Hub's date and session endpoints use the SVP occupation identifier for
-  // this flow, but some deployments also require category_id. Send both when
-  // available rather than silently receiving an empty session list.
+  // this flow. Sending category_id as well makes these endpoints return an
+  // empty 200 response, so keep the request keyed by occupation_id only.
   // Centers are derived from the response — only centers with sessions appear.
   useEffect(() => {
     let active = true;
@@ -771,7 +770,6 @@ export default function BookingPage() {
           city: String(selectedCity),
           exam_date: availableDate,
         });
-        if (categoryId) sessionParams.set("category_id", String(categoryId));
         const data: any = await api(`/live/pacc-exam-sessions?${sessionParams.toString()}`);
         if (!active) return;
         const rawSessions = Array.isArray(data?.sessions) ? data.sessions : pickArray(data);
@@ -842,7 +840,7 @@ export default function BookingPage() {
       }
     })();
     return () => { active = false; };
-  }, [selectedCity, availableDate, selectedOccupationId, categoryId]);
+  }, [selectedCity, availableDate, selectedOccupationId]);
 
   // Sessions are already loaded by the date effect above. When the user picks
   // a center, filter the existing sessions locally — no extra API call needed.
